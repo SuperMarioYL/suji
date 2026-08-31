@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "name": "suji",
+  "github": "https://github.com/SuperMarioYL/suji",
+  "host": "suji.lei6393.com",
+  "lang": { "primary": "zh", "toggle": true },
+  "accent": ["#e0a458"],
+  "hero": {
+    "eyebrow": { "zh": "本地 · 不上云 · 来源级联", "en": "Local · No cloud · Source-cascade" },
+    "headline": {
+      "zh": "记下的每条事实都带着来源\n来源一改，旧事实立刻标失效",
+      "en": "Every fact you note keeps its source\nwhen the source edits, the stale fact flags itself"
+    },
+    "sub": {
+      "zh": "跨微信公众号、钉钉、WPS、浏览器读到的内容，本地 Qwen 抽取事实并打上来源指纹——不截图、不上云、来源变就级联失效。",
+      "en": "Read across WeChat articles, DingTalk docs, WPS, and the browser; a local Qwen extracts facts and tags each by source — no screenshots, no cloud, cascade-flagging the moment a source mutates."
+    },
+    "command": "pip install suji && suji ask",
+    "cta": { "zh": "查看 GitHub", "en": "View on GitHub" },
+    "ctaGithub": { "zh": "Star ⭐", "en": "Star ⭐" },
+    "scroll": { "zh": "往下看", "en": "Scroll" }
+  },
+  "advantages": [
+    {
+      "title": { "zh": "不上云的来源记忆", "en": "Source memory that never leaves your Mac" },
+      "body": { "zh": "原始屏幕文本经本地 Ollama Qwen3 处理，不调云端 API；全开源可审计，数据从头到尾留在你设备里。", "en": "Raw screen text is processed by a local Ollama Qwen3 — no cloud API calls; fully open-source and auditable, your data stays on your device end to end." },
+      "chips": ["› 本地 Ollama", "› 不调云端 API", "› 全开源可审计"]
+    },
+    {
+      "title": { "zh": "每条事实带来源指纹", "en": "Every fact carries a source fingerprint" },
+      "body": { "zh": "记下一条数字时，溯记同时记下它来自哪篇公众号、哪份钉钉文档；一条命令回溯到原始出处。", "en": "When you note a number, SuJi also records which WeChat article or DingTalk doc it came from; one command traces it back to the origin." },
+      "chips": ["› 来源应用", "› 文档指纹", "› ask 一键回溯"]
+    },
+    {
+      "title": { "zh": "来源一改即级联失效", "en": "When a source edits, stale facts cascade-flag" },
+      "body": { "zh": "公众号文章被编辑或钉钉文档更新时，派生自旧内容的事实自动标失效，并附上新旧 diff——你不会再引用过时的数字。", "en": "When a WeChat article is edited or a DingTalk doc updated, facts derived from the old content auto-flag as stale with a before/after diff — you never cite an outdated number again." },
+      "chips": ["› 来源变更检测", "› 失效标记", "› 新旧 diff"]
+    },
+    {
+      "title": { "zh": "菜单栏无感抓取", "en": "Ambient capture from the menu bar" },
+      "body": { "zh": "读取聚焦窗口的纯文本，无截图、无 OCR，后台运行不干扰你阅读。", "en": "Reads the focused window's plain text via macOS Accessibility — no screenshots, no OCR, runs in the background without interrupting your reading." },
+      "chips": ["› AX 纯文本", "› 无截图无 OCR", "› 后台运行"]
+    }
+  ],
+  "scene": { "kind": "hub-nodes", "nodes": ["微信公众号", "钉钉文档", "WPS", "浏览器", "本地 Qwen3", "溯源库"] },
+  "cta": {
+    "headline": { "zh": "给读过的每个数字一个可追溯的家", "en": "Give every number you've read a traceable home" },
+    "sub": { "zh": "本地 Qwen · 来源指纹 · 级联失效 — macOS 开源，即装即用。", "en": "Local Qwen · source fingerprint · cascade-flagging — open-source on macOS, install and go." },
+    "button": { "zh": "查看 GitHub", "en": "View on GitHub" }
+  },
+  "footer": { "tag": { "zh": "MIT 开源 · 数据不出设备", "en": "MIT open-source · data never leaves your device" } }
+}
