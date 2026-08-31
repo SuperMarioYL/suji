@@ -36,3 +36,4 @@ Thumbs.db
 # local runtime store
 .suji/
 *.db
+.venv
