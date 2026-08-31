@@ -1,0 +1,38 @@
+# build scratch / orchestration control files (never ship)
+PUBLISH_BLOCKED.md
+BUILD_SETUP_NEXT_STEPS.md
+.spawn.*
+.builder_*
+.build_metadata*
+.stage_*
+DRIFT_REPORT.md
+GIT_AUTHOR_DRIFT.md
+
+# editor / agent helper dirs
+.claude/
+CLAUDE.md
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+dist/
+build/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# os
+.DS_Store
+Thumbs.db
+
+# local runtime store
+.suji/
+*.db

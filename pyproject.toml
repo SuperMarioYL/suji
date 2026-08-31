@@ -1,0 +1,76 @@
+# SuJi (溯记) — github.com/SuperMarioYL/suji
+# macOS menu-bar ambient screen-memory with per-fact source provenance
+# and cascade-invalidation on source mutation. Local Qwen3 render, data
+# never leaves the device.
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "suji"
+version = "0.1.0"
+description = "溯记 — local ambient screen-memory tagging each captured fact by source, with cascade-invalidation when the source mutates."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+authors = [{ name = "SuperMarioYL" }]
+homepage = "https://github.com/SuperMarioYL/suji"
+repository = "https://github.com/SuperMarioYL/suji"
+keywords = [
+  "macos",
+  "accessibility",
+  "ambient-memory",
+  "provenance",
+  "local-llm",
+  "qwen",
+  "ollama",
+  "cascade",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: MacOS X",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Office/Business",
+]
+dependencies = [
+  "openai>=1.40",
+  "typer>=0.12",
+  "watchdog>=5.0",
+  "rich>=13.7",
+]
+
+[project.scripts]
+suji = "suji.cli:app"
+suji-bar = "suji.menu_bar:main"
+
+[project.optional-dependencies]
+# macOS menu-bar + Accessibility capture. Optional so the CLI (ask/stale/
+# sources) and the test suite run headless on any platform — the AX capture
+# layer is guarded behind these imports (tests stub it).
+macos = [
+  "rumps>=0.3.0; platform_system == 'Darwin'",
+  "pyobjc-framework-ApplicationServices>=10.0; platform_system == 'Darwin'",
+]
+dev = [
+  "pytest>=8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/SuperMarioYL/suji"
+Repository = "https://github.com/SuperMarioYL/suji"
+Issues = "https://github.com/SuperMarioYL/suji/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["suji"]
+
+[tool.hatch.build.targets.sdist]
+include = ["suji", "tests", "examples", "docs", "assets", "README.md", "README.en.md", "LICENSE", "VERSION"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
