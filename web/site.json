@@ -1,52 +1,229 @@
 {
-  "schema": 1,
-  "name": "suji",
+  "schema": 3,
+  "name": "SuJi 溯记",
   "github": "https://github.com/SuperMarioYL/suji",
   "host": "suji.lei6393.com",
-  "lang": { "primary": "zh", "toggle": true },
-  "accent": ["#e0a458"],
+  "palette": "auto",
+  "lang": {
+    "primary": "zh",
+    "toggle": true
+  },
+  "meta": {
+    "visual_profile": "neon-particle",
+    "demo_source": "docs/demo-results.json",
+    "implementation_version": "0.1.0"
+  },
   "hero": {
-    "eyebrow": { "zh": "本地 · 不上云 · 来源级联", "en": "Local · No cloud · Source-cascade" },
+    "eyebrow": {
+      "zh": "来源记忆 · 内容指纹",
+      "en": "SOURCE MEMORY · CONTENT FINGERPRINTS"
+    },
     "headline": {
-      "zh": "记下的每条事实都带着来源\n来源一改，旧事实立刻标失效",
-      "en": "Every fact you note keeps its source\nwhen the source edits, the stale fact flags itself"
+      "zh": "记住那句话，\n也记住它来自哪里。",
+      "en": "Remember the statement.\nKeep its source attached."
     },
     "sub": {
-      "zh": "跨微信公众号、钉钉、WPS、浏览器读到的内容，本地 Qwen 抽取事实并打上来源指纹——不截图、不上云、来源变就级联失效。",
-      "en": "Read across WeChat articles, DingTalk docs, WPS, and the browser; a local Qwen extracts facts and tags each by source — no screenshots, no cloud, cascade-flagging the moment a source mutates."
+      "zh": "SuJi 将抽取的事实、来源地址和捕获时的内容指纹保存在 SQLite，提供关键词回查，并在重新校验发现来源变化时标记旧事实失效。",
+      "en": "SuJi stores extracted facts, source addresses and capture-time fingerprints in SQLite, supports keyword lookup, and marks old facts stale when a recheck detects source changes."
     },
-    "command": "pip install suji && suji ask",
-    "cta": { "zh": "查看 GitHub", "en": "View on GitHub" },
-    "ctaGithub": { "zh": "Star ⭐", "en": "Star ⭐" },
-    "scroll": { "zh": "往下看", "en": "Scroll" }
+    "href": "#quickstart",
+    "cta": {
+      "zh": "运行示例",
+      "en": "Run the example"
+    },
+    "ctaGithub": {
+      "zh": "查看源码",
+      "en": "View source"
+    }
+  },
+  "scene": {
+    "kind": "neon-graph",
+    "fallback": "/assets/presentation/scene-dark.svg",
+    "fallbackLight": "/assets/presentation/scene-light.svg",
+    "caption": {
+      "zh": "留下事实，也留下它的出处",
+      "en": "Keep the fact and the source it came from."
+    }
   },
   "advantages": [
     {
-      "title": { "zh": "不上云的来源记忆", "en": "Source memory that never leaves your Mac" },
-      "body": { "zh": "原始屏幕文本经本地 Ollama Qwen3 处理，不调云端 API；全开源可审计，数据从头到尾留在你设备里。", "en": "Raw screen text is processed by a local Ollama Qwen3 — no cloud API calls; fully open-source and auditable, your data stays on your device end to end." },
-      "chips": ["› 本地 Ollama", "› 不调云端 API", "› 全开源可审计"]
+      "title": {
+        "zh": "来源随事实保存",
+        "en": "Attach sources to facts"
+      },
+      "body": {
+        "zh": "地址、应用标签和捕获指纹伴随事实保存。",
+        "en": "Addresses, application labels and fingerprints are stored with facts."
+      }
     },
     {
-      "title": { "zh": "每条事实带来源指纹", "en": "Every fact carries a source fingerprint" },
-      "body": { "zh": "记下一条数字时，溯记同时记下它来自哪篇公众号、哪份钉钉文档；一条命令回溯到原始出处。", "en": "When you note a number, SuJi also records which WeChat article or DingTalk doc it came from; one command traces it back to the origin." },
-      "chips": ["› 来源应用", "› 文档指纹", "› ask 一键回溯"]
+      "title": {
+        "zh": "变化保留差异",
+        "en": "Keep the source diff"
+      },
+      "body": {
+        "zh": "重新校验发现内容变化时保存新旧 diff。",
+        "en": "A detected source change retains its old/new diff."
+      }
     },
     {
-      "title": { "zh": "来源一改即级联失效", "en": "When a source edits, stale facts cascade-flag" },
-      "body": { "zh": "公众号文章被编辑或钉钉文档更新时，派生自旧内容的事实自动标失效，并附上新旧 diff——你不会再引用过时的数字。", "en": "When a WeChat article is edited or a DingTalk doc updated, facts derived from the old content auto-flag as stale with a before/after diff — you never cite an outdated number again." },
-      "chips": ["› 来源变更检测", "› 失效标记", "› 新旧 diff"]
-    },
-    {
-      "title": { "zh": "菜单栏无感抓取", "en": "Ambient capture from the menu bar" },
-      "body": { "zh": "读取聚焦窗口的纯文本，无截图、无 OCR，后台运行不干扰你阅读。", "en": "Reads the focused window's plain text via macOS Accessibility — no screenshots, no OCR, runs in the background without interrupting your reading." },
-      "chips": ["› AX 纯文本", "› 无截图无 OCR", "› 后台运行"]
+      "title": {
+        "zh": "可以无模型试用",
+        "en": "Try the rule path"
+      },
+      "body": {
+        "zh": "规则抽取器支持本地文件示例，不需要模型服务。",
+        "en": "The rule extractor supports a local-file example without a model service."
+      }
     }
   ],
-  "scene": { "kind": "hub-nodes", "nodes": ["微信公众号", "钉钉文档", "WPS", "浏览器", "本地 Qwen3", "溯源库"] },
-  "cta": {
-    "headline": { "zh": "给读过的每个数字一个可追溯的家", "en": "Give every number you've read a traceable home" },
-    "sub": { "zh": "本地 Qwen · 来源指纹 · 级联失效 — macOS 开源，即装即用。", "en": "Local Qwen · source fingerprint · cascade-flagging — open-source on macOS, install and go." },
-    "button": { "zh": "查看 GitHub", "en": "View on GitHub" }
+  "story": {
+    "intro": {
+      "title": {
+        "zh": "留下事实，也留下它的出处",
+        "en": "Keep the fact and the source it came from."
+      },
+      "body": {
+        "zh": "笔记里的数字可能还在，出处却已被修改。事实和来源放在一起，复核时就能看到当时来自哪个文件或页面，以及后来哪些内容发生变化。fresh/stale 是来源版本状态，不表示陈述已经被验证为真或假。",
+        "en": "A number can remain in your notes after its source changes. Keeping facts with their origin lets you inspect the file or page they came from and what changed later. fresh/stale describes source-version state, not whether a statement has been proven true or false."
+      }
+    },
+    "sections": [
+      {
+        "title": {
+          "zh": "从输入到结果",
+          "en": "From input to result"
+        },
+        "body": {
+          "zh": "构造文本包含“12 个任务”和“版本号是 1.0”两条事实。编辑任务数为 15 后，真实 FileFetcher 重读来源，Cascade 标记两条旧事实 stale，并保留含 12/15 的 diff。没有改动的版本号事实也失效，因为当前规则按整个来源指纹处理。",
+          "en": "Constructed text contains two facts: twelve tasks and version 1.0. After changing the task count to fifteen, the real FileFetcher rereads the source and Cascade marks both old facts stale, retaining a diff with 12/15. The unchanged version fact also becomes stale because the current rule operates on the whole-source fingerprint."
+        },
+        "image": {
+          "light": "/assets/presentation/process-light.svg",
+          "dark": "/assets/presentation/process-dark.svg",
+          "alt": {
+            "zh": "从输入到结果",
+            "en": "From input to result"
+          }
+        }
+      },
+      {
+        "title": {
+          "zh": "实现中的分工",
+          "en": "How the implementation fits together"
+        },
+        "body": {
+          "zh": "Capturer 提供文本与来源标签，FactExtractor 提取陈述，ingest_capture 写入来源与事实表。provenance 规范化内容后计算 SHA-256；Cascade 用文件、URL 或 doc_id fetcher 重新读取，再将旧指纹事实标为 stale 并保存 diff。macOS 菜单栏是可选的 Accessibility 捕获入口，CLI 可以无界面使用。",
+          "en": "A Capturer supplies text and source labels, a FactExtractor produces statements, and ingest_capture stores sources and facts. provenance normalizes content before SHA-256 hashing. Cascade rereads file, URL or doc_id sources, marks old-fingerprint facts stale and stores a diff. The optional macOS menu bar provides Accessibility capture; the CLI can run headlessly."
+        },
+        "image": {
+          "light": "/assets/presentation/architecture-light.svg",
+          "dark": "/assets/presentation/architecture-dark.svg",
+          "alt": {
+            "zh": "实现中的分工",
+            "en": "How the implementation fits together"
+          }
+        }
+      },
+      {
+        "title": {
+          "zh": "接入现有工作流",
+          "en": "Connect existing workflows"
+        },
+        "body": {
+          "zh": "SuJi 将抽取的事实、来源地址和捕获时的内容指纹保存在 SQLite，提供关键词回查，并在重新校验发现来源变化时标记旧事实失效。",
+          "en": "SuJi stores extracted facts, source addresses and capture-time fingerprints in SQLite, supports keyword lookup, and marks old facts stale when a recheck detects source changes."
+        },
+        "image": {
+          "light": "/assets/presentation/integrations-light.svg",
+          "dark": "/assets/presentation/integrations-dark.svg",
+          "alt": {
+            "zh": "接入现有工作流",
+            "en": "Connect existing workflows"
+          }
+        }
+      }
+    ],
+    "details": [
+      {
+        "title": {
+          "zh": "配置与边界",
+          "en": "Configuration and limits"
+        },
+        "body": {
+          "zh": "失效是整个来源版本级别，不是逐句真假判断或完整语义依赖分析。",
+          "en": "Invalidation is source-version based, not a per-statement truth judgment or complete semantic dependency analysis."
+        }
+      }
+    ]
   },
-  "footer": { "tag": { "zh": "MIT 开源 · 数据不出设备", "en": "MIT open-source · data never leaves your device" } }
+  "demo": {
+    "title": {
+      "zh": "运行自带示例",
+      "en": "Run the supplied example"
+    },
+    "note": {
+      "zh": "v0.1.0 的真实文件捕获接口、规则抽取、SQLite 与重新校验。没有读取屏幕、访问 URL 或调用模型；临时目录自动清理。",
+      "en": "Real v0.1.0 file-capture interface, rule extraction, SQLite and rechecking. No screen is read, URL fetched or model called; temporary files are cleaned up."
+    },
+    "source": "https://github.com/SuperMarioYL/suji/blob/main/docs/demo-results.json",
+    "steps": [
+      {
+        "label": {
+          "zh": "运行 1",
+          "en": "Run 1"
+        },
+        "body": {
+          "zh": "构造文本包含“12 个任务”和“版本号是 1.0”两条事实。编辑任务数为 15 后，真实 FileFetcher 重读来源，Cascade 标记两条旧事实 stale，并保留含 12/15 的 diff。没有改动的版本号事实也失效，因为当前规则按整个来源指纹处理。",
+          "en": "Constructed text contains two facts: twelve tasks and version 1.0. After changing the task count to fifteen, the real FileFetcher rereads the source and Cascade marks both old facts stale, retaining a diff with 12/15. The unchanged version fact also becomes stale because the current rule operates on the whole-source fingerprint."
+        },
+        "image": "/assets/presentation/demo-0-light.svg",
+        "imageDark": "/assets/presentation/demo-0-dark.svg",
+        "command": "python examples/presentation_demo.py",
+        "output": "{\n  \"captured_facts\": 2,\n  \"before\": [\n    \"fresh\",\n    \"fresh\"\n  ],\n  \"source_mutated\": true,\n  \"stale_count\": 2,\n  \"after\": [\n    \"stale\",\n    \"stale\"\n  ],\n  \"diff_has_old_and_new\": true\n}\n"
+      }
+    ]
+  },
+  "quickstart": {
+    "title": {
+      "zh": "运行完整示例",
+      "en": "Run the complete example"
+    },
+    "body": {
+      "zh": "需要 Python 3.12+。基本示例只使用本地文件、规则抽取和 SQLite，不需要 Mac、Ollama 或辅助功能权限。",
+      "en": "Requires Python 3.12+. The basic example uses local files, rule extraction and SQLite; it needs no Mac, Ollama or Accessibility permission."
+    },
+    "steps": [
+      {
+        "title": {
+          "zh": "准备环境",
+          "en": "Prepare the environment"
+        },
+        "code": "git clone https://github.com/SuperMarioYL/suji.git\ncd suji\npython3 -m venv .venv\nsource .venv/bin/activate\npython -m pip install -e ."
+      },
+      {
+        "title": {
+          "zh": "运行本地示例",
+          "en": "Run the local example"
+        },
+        "code": "python examples/presentation_demo.py"
+      }
+    ]
+  },
+  "limitations": [
+    {
+      "zh": "失效是整个来源版本级别，不是逐句真假判断或完整语义依赖分析。",
+      "en": "Invalidation is source-version based, not a per-statement truth judgment or complete semantic dependency analysis."
+    },
+    {
+      "zh": "本轮未验证屏幕权限、实际 App、URL 表示差异或模型抽取质量。",
+      "en": "This example does not validate screen permissions, real apps, URL representation differences or model extraction quality."
+    }
+  ],
+  "footer": {
+    "tag": {
+      "zh": "Python 3.12+ · optional macOS capture · MIT",
+      "en": "Python 3.12+ · optional macOS capture · MIT"
+    }
+  }
 }

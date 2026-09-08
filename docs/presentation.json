@@ -1,0 +1,98 @@
+{
+  "name": "SuJi",
+  "tagline": "Keep the fact and the source it came from.",
+  "architecture": {
+    "title": "Source text, fingerprints and stored facts",
+    "nodes": [
+      {
+        "title": "Source text",
+        "detail": "File, URL or accessible text"
+      },
+      {
+        "title": "Capture + extractor",
+        "detail": "Text and provenance"
+      },
+      {
+        "title": "SQLite facts",
+        "detail": "Capture-time fingerprint"
+      },
+      {
+        "title": "Recheck source",
+        "detail": "Read and compare current content"
+      },
+      {
+        "title": "Stale + diff",
+        "detail": "Old-source facts marked"
+      }
+    ],
+    "edges": [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        3
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        3,
+        4
+      ]
+    ]
+  },
+  "process": {
+    "title": "Recheck one edited source",
+    "steps": [
+      {
+        "title": "Capture two facts",
+        "detail": "12 tasks and version 1.0"
+      },
+      {
+        "title": "Edit the file",
+        "detail": "Task count becomes 15"
+      },
+      {
+        "title": "Compare fingerprint",
+        "detail": "Source mutation detected"
+      },
+      {
+        "title": "Mark old facts",
+        "detail": "Both stale; diff retained"
+      }
+    ],
+    "result": "Real file and SQLite operations; no screen or model access."
+  },
+  "integrations": {
+    "title": "Source access and local review",
+    "items": [
+      {
+        "title": "Text files",
+        "detail": "Local rechecks"
+      },
+      {
+        "title": "HTTP URLs",
+        "detail": "Raw source retrieval"
+      },
+      {
+        "title": "macOS AX",
+        "detail": "Optional capture interface"
+      },
+      {
+        "title": "SQLite",
+        "detail": "Facts and provenance"
+      },
+      {
+        "title": "CLI",
+        "detail": "Search and recheck"
+      }
+    ]
+  }
+}

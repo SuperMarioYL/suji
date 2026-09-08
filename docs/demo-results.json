@@ -1,0 +1,10 @@
+{
+  "version": "0.1.0",
+  "fixture": "Constructed local text file, rule extractor, real SQLite store and file recheck. No screen capture, URL fetch or model request.",
+  "steps": [
+    {
+      "command": "python examples/presentation_demo.py",
+      "output": "{\n  \"captured_facts\": 2,\n  \"before\": [\n    \"fresh\",\n    \"fresh\"\n  ],\n  \"source_mutated\": true,\n  \"stale_count\": 2,\n  \"after\": [\n    \"stale\",\n    \"stale\"\n  ],\n  \"diff_has_old_and_new\": true\n}\n"
+    }
+  ]
+}

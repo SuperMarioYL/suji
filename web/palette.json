@@ -1,0 +1,38 @@
+{
+  "mode": "auto",
+  "id": "56e6cc-6abbe7-acf6cd-6070df6b75fb",
+  "identity": "https://github.com/supermarioyl/suji",
+  "primary": "#56e6cc",
+  "secondary": "#6abbe7",
+  "highlight": "#acf6cd",
+  "dark": {
+    "bg": "#050c11",
+    "panel": "#0c171d",
+    "code": "#0a171b",
+    "ink": "#eefdf5",
+    "muted": "#95b9bf",
+    "line": "#173c3a",
+    "primary": "#56e6cc",
+    "secondary": "#6abbe7",
+    "highlight": "#acf6cd",
+    "accent": "#56e6cc",
+    "buttonStart": "#318375",
+    "buttonEnd": "#477c9a",
+    "buttonText": "#ffffff"
+  },
+  "light": {
+    "bg": "#f9fefd",
+    "panel": "#f7fefc",
+    "code": "#f3fdfb",
+    "ink": "#132a2c",
+    "muted": "#557a81",
+    "line": "#cbf7ef",
+    "primary": "#308072",
+    "secondary": "#457a97",
+    "highlight": "#577c68",
+    "accent": "#308072",
+    "buttonStart": "#318375",
+    "buttonEnd": "#477c9a",
+    "buttonText": "#ffffff"
+  }
+}
