@@ -102,7 +102,7 @@ URL rechecks retrieve raw HTML, which may differ from AX text; comprehensive bod
 
 ## Recorded demo
 
-Real v0.1.0 file-capture interface, rule extraction, SQLite and rechecking. No screen is read, URL fetched or model called; temporary files are cleaned up.
+Real v0.2.0 file-capture interface, rule extraction, SQLite and rechecking. No screen is read, URL fetched or model called; temporary files are cleaned up.
 
 [Inputs, commands and complete output](docs/demo-results.json)
 

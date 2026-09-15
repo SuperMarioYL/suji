@@ -175,8 +175,8 @@
       "en": "Run the supplied example"
     },
     "note": {
-      "zh": "v0.1.0 的真实文件捕获接口、规则抽取、SQLite 与重新校验。没有读取屏幕、访问 URL 或调用模型；临时目录自动清理。",
-      "en": "Real v0.1.0 file-capture interface, rule extraction, SQLite and rechecking. No screen is read, URL fetched or model called; temporary files are cleaned up."
+      "zh": "v0.2.0 的真实文件捕获接口、规则抽取、SQLite 与重新校验。没有读取屏幕、访问 URL 或调用模型；临时目录自动清理。",
+      "en": "Real v0.2.0 file-capture interface, rule extraction, SQLite and rechecking. No screen is read, URL fetched or model called; temporary files are cleaned up."
     },
     "source": "https://github.com/SuperMarioYL/suji/blob/main/docs/demo-results.json",
     "steps": [
