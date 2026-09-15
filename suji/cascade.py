@@ -134,22 +134,27 @@ class Cascade:
 
         new_fp = fingerprint(content)
         current_fp = self._store.source_fingerprint(source_id)
-        if new_fp == current_fp:
+        mutated = new_fp != current_fp
+
+        if mutated:
+            # The source mutated since the last check. Diff the last-known
+            # content against the new content and advance the stored
+            # fingerprint before staling the out-of-date facts.
+            old_content = self._store.source_last_content(source_id)
+            diff = source_diff(old_content, content)
+            self._store.update_source_fingerprint(source_id, new_fp, content)
+        else:
             # No mutation since the last check — refresh the check timestamp
-            # only; facts are unaffected.
-            return CascadeResult(
-                source_id=source_id,
-                mutated=False,
-                new_fingerprint=new_fp,
-            )
+            # only. Facts captured from prior content are still swept below:
+            # a re-capture between checks advances the stored fingerprint
+            # past a mutation, and those facts must not stay fresh forever.
+            diff = ""
+            self._store.mark_source_checked(source_id)
 
-        # The source mutated. Diff the last-known content against the new
-        # content, then mark every fact whose capture-time fingerprint
-        # differs from the new current one as stale.
-        old_content = self._store.source_last_content(source_id)
-        diff = source_diff(old_content, content)
-        self._store.update_source_fingerprint(source_id, new_fp, content)
-
+        # Stale every fresh fact whose capture-time fingerprint no longer
+        # matches the current content — both when the mutation was detected
+        # here and when it happened between checks (the heal path, where no
+        # old content survives to diff, so the fact carries an empty diff).
         stale_count = 0
         for fact in self._store.list_facts(source_id=source_id):
             if fact.source_fingerprint != new_fp and fact.status != "stale":
@@ -157,7 +162,7 @@ class Cascade:
                 stale_count += 1
         return CascadeResult(
             source_id=source_id,
-            mutated=True,
+            mutated=mutated,
             stale_count=stale_count,
             diff=diff,
             new_fingerprint=new_fp,

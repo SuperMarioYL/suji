@@ -277,3 +277,62 @@ def test_ask_is_case_insensitive_and_substring(tmp_path):
         assert store.search_facts("不存在的数字") == []
     finally:
         store.close()
+
+
+# --------------------------------------------------------------------------- #
+# Re-capture: the menu-bar loop ingests the same window every few seconds
+# --------------------------------------------------------------------------- #
+def test_recapture_same_article_keeps_one_source_and_does_not_crash(tmp_path):
+    store = SuJiStore(str(tmp_path / "suji.db"))
+    try:
+        cap = _FakeCapturer(_ARTICLE)
+        n1 = ingest_capture(cap, RuleBasedExtractor(), store)
+        assert n1 >= 3
+        # The second capture of the same window must not raise. v0.1.0
+        # crashed here with IntegrityError: upsert_source returned a fact
+        # rowid as the source id on the ON CONFLICT path, so add_fact hit
+        # a FOREIGN KEY violation (or attached facts to the wrong source).
+        n2 = ingest_capture(cap, RuleBasedExtractor(), store)
+
+        srcs = store.list_sources()
+        assert len(srcs) == 1
+        for fact in store.list_facts():
+            assert fact.source_id == srcs[0].id
+        assert n2 == 0  # identical content re-adds nothing (dedup below)
+    finally:
+        store.close()
+
+
+def test_recapture_same_content_adds_no_duplicate_facts(tmp_path):
+    store = SuJiStore(str(tmp_path / "suji.db"))
+    try:
+        cap = _FakeCapturer(_ARTICLE)
+        first = ingest_capture(cap, RuleBasedExtractor(), store)
+        # The 5-second loop re-captures unchanged content repeatedly; none
+        # of those ticks may store a duplicate fact.
+        for _ in range(3):
+            assert ingest_capture(cap, RuleBasedExtractor(), store) == 0
+        assert len(store.list_facts()) == first
+        # ask shows each fact exactly once.
+        assert len(store.search_facts("4.2")) == 1
+    finally:
+        store.close()
+
+
+def test_recapture_changed_content_adds_new_facts_with_new_fingerprint(tmp_path):
+    store = SuJiStore(str(tmp_path / "suji.db"))
+    try:
+        v1 = ingest_capture(_FakeCapturer(_ARTICLE), RuleBasedExtractor(), store)
+        assert v1 >= 1
+        # The article is edited; the loop re-captures the new content. The
+        # new facts carry the new capture-time fingerprint, so they are NOT
+        # duplicates and must be added.
+        edited = _ARTICLE.replace("4.2 亿", "4.3 亿")
+        v2 = ingest_capture(_FakeCapturer(edited), RuleBasedExtractor(), store)
+        assert v2 >= 1
+        assert len(store.list_facts()) == v1 + v2
+        assert len(store.search_facts("4.3")) == 1
+        # The old fact is still there (fresh until the cascade marks it).
+        assert len(store.search_facts("4.2")) == 1
+    finally:
+        store.close()

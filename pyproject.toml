@@ -8,7 +8,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "suji"
-version = "0.1.0"
+version = "0.2.0"
 description = "溯记 — local ambient screen-memory tagging each captured fact by source, with cascade-invalidation when the source mutates."
 readme = "README.md"
 license = "MIT"

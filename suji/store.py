@@ -107,11 +107,18 @@ class SuJiStore:
         The capture pipeline calls this with the just-captured document
         content; the fingerprint + content are stored as the source's
         current state. Returns the source id.
+
+        The id is resolved by ``doc_url_or_id`` after the upsert: on the
+        ON CONFLICT (update) path SQLite does not refresh the connection's
+        last-insert rowid, so ``cur.lastrowid`` would return the rowid of
+        whatever row was last INSERTed (a fact row from the previous
+        capture) — re-capturing a known document would then attach facts
+        to a nonexistent or wrong source id.
         """
         fp = fingerprint(content)
         now = _now_iso()
         with self._conn:
-            cur = self._conn.execute(
+            self._conn.execute(
                 """INSERT INTO sources
                        (app_bundle, doc_url_or_id, doc_title, source_kind,
                         capture_context, fingerprint, last_content,
@@ -128,7 +135,11 @@ class SuJiStore:
                 (ref.app_bundle, ref.doc_url_or_id, ref.doc_title,
                  ref.source_kind.value, ref.capture_context, fp, content, now, now),
             )
-            return int(cur.lastrowid)
+            row = self._conn.execute(
+                "SELECT id FROM sources WHERE doc_url_or_id = ?",
+                (ref.doc_url_or_id,),
+            ).fetchone()
+            return int(row["id"])
 
     def add_source_ref(self, ref: SourceRef) -> int:
         """Insert a source ref with no content yet (fingerprint empty).
@@ -200,6 +211,18 @@ class SuJiStore:
         ).fetchone()
         return row["last_content"] if row else ""
 
+    def mark_source_checked(self, source_id: int) -> None:
+        """Refresh ``last_checked_at`` after a successful re-check.
+
+        Called by the cascade on the no-mutation path so the ``suji
+        sources`` "最近校验" column reflects rechecks, not just captures.
+        """
+        with self._conn:
+            self._conn.execute(
+                "UPDATE sources SET last_checked_at = ? WHERE id = ?",
+                (_now_iso(), source_id),
+            )
+
     # ----- facts -----
     def add_fact(
         self,
@@ -220,6 +243,25 @@ class SuJiStore:
                  source_fingerprint, note),
             )
             return int(cur.lastrowid)
+
+    def has_fact(
+        self, source_id: int, text: str, source_fingerprint: str
+    ) -> bool:
+        """True when this exact fact is already stored.
+
+        The dedup key for the capture loop: the periodic re-capture of an
+        unchanged document re-extracts the same facts with the same
+        capture-time fingerprint, and re-adding them would flood ``ask``
+        with duplicates. A fact extracted from *changed* content carries a
+        different fingerprint and is never considered a duplicate.
+        """
+        row = self._conn.execute(
+            "SELECT 1 FROM facts "
+            "WHERE source_id = ? AND text = ? AND source_fingerprint = ? "
+            "LIMIT 1",
+            (source_id, text, source_fingerprint),
+        ).fetchone()
+        return row is not None
 
     def get_fact(self, fact_id: int) -> Optional[Fact]:
         row = self._conn.execute(

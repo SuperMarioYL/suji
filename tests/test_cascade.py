@@ -101,6 +101,90 @@ def test_recheck_no_mutation_keeps_facts_fresh(tmp_path):
         store.close()
 
 
+def test_recheck_no_mutation_refreshes_last_checked_at(tmp_path):
+    store = SuJiStore(str(tmp_path / "suji.db"))
+    try:
+        ref = make_source_ref(
+            "com.apple.Safari", "https://mp.weixin.qq.com/s/abc", "Q3 财报"
+        )
+        source_id = store.upsert_source(ref, _ARTICLE_V1)
+        # Pin an obviously-old timestamp; a clean recheck must advance it
+        # (v0.1.0 claimed this in a comment but never performed the update).
+        with store._conn:
+            store._conn.execute(
+                "UPDATE sources SET last_checked_at = '2000-01-01T00:00:00+00:00' "
+                "WHERE id = ?",
+                (source_id,),
+            )
+
+        cascade = Cascade(store, fetcher_for=lambda _s: _FakeFetcher(_ARTICLE_V1))
+        assert not cascade.recheck_source(source_id).mutated
+
+        row = store._conn.execute(
+            "SELECT last_checked_at FROM sources WHERE id = ?", (source_id,)
+        ).fetchone()
+        assert row["last_checked_at"] > "2000-01-01"
+    finally:
+        store.close()
+
+
+# --------------------------------------------------------------------------- #
+# Missed-mutation heal: a re-capture between the edit and the recheck must
+# not leave old facts fresh forever (the menu-bar loop's common path)
+# --------------------------------------------------------------------------- #
+def test_recheck_heals_facts_when_recapture_advanced_the_fingerprint(tmp_path):
+    store = SuJiStore(str(tmp_path / "suji.db"))
+    try:
+        ref = make_source_ref(
+            "com.apple.Safari", "https://mp.weixin.qq.com/s/abc", "Q3 财报"
+        )
+        source_id = store.upsert_source(ref, _ARTICLE_V1)
+        store.add_fact(source_id, "Q3 营收 4.2 亿", fingerprint(_ARTICLE_V1))
+
+        # The article was edited to V2, and the capture loop re-captured V2
+        # before any recheck ran — the stored fingerprint jumps to fp(V2)
+        # with no cascade in between.
+        store.upsert_source(ref, _ARTICLE_V2)
+        store.add_fact(source_id, "Q3 营收 4.3 亿", fingerprint(_ARTICLE_V2))
+
+        # `suji stale` re-verifies while the article sits at V2: no NEW
+        # mutation is detected, but the V1-captured fact must still cascade
+        # to stale — v0.1.0 left it fresh forever (early "not mutated"
+        # return without sweeping mismatched facts).
+        cascade = Cascade(store, fetcher_for=lambda _s: _FakeFetcher(_ARTICLE_V2))
+        result = cascade.recheck_source(source_id)
+
+        assert result.mutated is False
+        assert result.stale_count == 1
+        statuses = {f.text: f.status for f in store.list_facts(source_id=source_id)}
+        assert statuses["Q3 营收 4.2 亿"] == "stale"
+        assert statuses["Q3 营收 4.3 亿"] == "fresh"
+    finally:
+        store.close()
+
+
+def test_recheck_heal_is_idempotent(tmp_path):
+    store = SuJiStore(str(tmp_path / "suji.db"))
+    try:
+        ref = make_source_ref(
+            "com.apple.Safari", "https://mp.weixin.qq.com/s/abc", "Q3 财报"
+        )
+        source_id = store.upsert_source(ref, _ARTICLE_V1)
+        store.add_fact(source_id, "Q3 营收 4.2 亿", fingerprint(_ARTICLE_V1))
+        store.upsert_source(ref, _ARTICLE_V2)
+
+        cascade = Cascade(store, fetcher_for=lambda _s: _FakeFetcher(_ARTICLE_V2))
+        first = cascade.recheck_source(source_id)
+        assert first.stale_count == 1
+
+        second = cascade.recheck_source(source_id)
+        assert not second.mutated
+        assert second.stale_count == 0  # already stale — no double-mark
+        assert len(store.list_stale()) == 1
+    finally:
+        store.close()
+
+
 # --------------------------------------------------------------------------- #
 # URL mutation → cascade-stale + diff
 # --------------------------------------------------------------------------- #

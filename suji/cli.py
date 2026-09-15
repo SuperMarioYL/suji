@@ -192,6 +192,14 @@ def _print_recheck(results, store: SuJiStore) -> None:
             body_lines.append(
                 f"[red]· {doc} 来源已变更 → {r.stale_count} 条事实标记失效[/red]"
             )
+        elif r.stale_count:
+            # No mutation since the last check, but facts captured from
+            # older content were healed to stale (the source was re-captured
+            # after an edit, advancing past a missed cascade window).
+            body_lines.append(
+                f"[yellow]· {doc} 来源未变，但补标 {r.stale_count} 条"
+                "失效事实（上次校验后来源曾变更）[/yellow]"
+            )
         else:
             body_lines.append(f"[green]· {doc} 来源未变[/green]")
     console.print(Panel("\n".join(body_lines), title="来源再校验"))

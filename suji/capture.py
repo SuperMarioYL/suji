@@ -238,6 +238,12 @@ def ingest_capture(
     the rule-based extractor, without rumps or a live Qwen3. Every extracted
     fact is stored with ``source_fingerprint`` = the captured source
     content's hash at capture time (the cascade invariant).
+
+    The capture loop calls this every few seconds on the same focused
+    window, so facts already stored for the same (source, capture-time
+    fingerprint, text) are skipped — re-capturing unchanged content adds
+    nothing, while facts from changed content carry a new fingerprint and
+    are always added.
     """
     captured = capturer.capture()
     text = captured.text or ""
@@ -259,6 +265,8 @@ def ingest_capture(
     count = 0
     for ef in extractor.extract(text):
         if not ef.text.strip():
+            continue
+        if store.has_fact(source_id, ef.text, fp):
             continue
         store.add_fact(
             source_id=source_id,

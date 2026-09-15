@@ -10,6 +10,6 @@ The data never leaves the device: the only model invoked is a local Qwen3
 running on the user's own Ollama.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = ["__version__"]

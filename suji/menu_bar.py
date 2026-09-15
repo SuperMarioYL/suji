@@ -67,7 +67,10 @@ def _build_app(capturer: Capturer, extractor: FactExtractor, store: SuJiStore):
                 # (e.g. paths missing), the CLI ``suji stale`` still works.
                 self._watcher = None
 
-        @rumps.timer(_CAPTURE_INTERVAL)  # type: ignore[attr-defined]
+        # NOTE: no @rumps.timer decorator here — it registers an auto-start
+        # timer that App.run() starts unconditionally, which would fire
+        # alongside the one toggle_memorize creates and double the capture
+        # rate. _tick stays a plain method started only by the toggle.
         def _tick(self, _sender):  # type: ignore[override]
             """Periodic capture — only acts when '开始记忆' is on."""
             if self._timer is None:
