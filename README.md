@@ -24,7 +24,7 @@
 
 ## 架构
 
-Capturer 提供文本与来源标签，FactExtractor 提取陈述，ingest_capture 写入来源与事实表。provenance 规范化内容后计算 SHA-256；Cascade 用文件、URL 或 doc_id fetcher 重新读取，再将旧指纹事实标为 stale 并保存 diff。macOS 菜单栏是可选的 Accessibility 捕获入口，CLI 可以无界面使用。
+Capturer 提供文本与来源标签，FactExtractor 提取陈述，ingest_capture 在窗口文本变化时经同一 fetcher 读取来源本身的内容，写入来源与事实表。provenance 规范化内容后计算 SHA-256；Cascade 用文件、URL 或 doc_id fetcher 重新读取，再将旧指纹事实标为 stale 并保存 diff。macOS 菜单栏是可选的 Accessibility 捕获入口，CLI 可以无界面使用。
 
 <picture>
   <source media="(max-width: 640px) and (prefers-color-scheme: dark)" srcset="assets/presentation/architecture-mobile-dark.svg">
@@ -68,7 +68,7 @@ python -m pip install -e ".[macos]"
 SUJI_NO_LLM=1 suji-bar
 ```
 
-ask 是数据库关键词搜索，不是模型问答。stale 会重新获取已存来源，URL 类型可能联网；--list-only 只显示已经失效的事实。菜单栏默认处理聚焦窗口的可访问文本，不做截图 OCR。
+ask 是数据库关键词搜索，不是模型问答。stale 会重新获取已存来源，URL 类型可能联网；--list-only 只显示已经失效的事实。菜单栏默认处理聚焦窗口的可访问文本，不做截图 OCR。对 URL 与本地文件来源，抓取时也会经同一 fetcher 读取该来源本身以记录指纹（窗口文本未变则不重复读取，联网只发生在 URL 来源）。
 
 ## 能力与集成
 
@@ -98,11 +98,11 @@ ask 是数据库关键词搜索，不是模型问答。stale 会重新获取已�
 
 模型默认地址是本地，但允许改为其他端点，程序不强制网络隔离。未设置 NO_LLM 时会选择模型抽取器；请求失败不会自动转换成一次成功规则抽取。
 
-URL 重取的是原始 HTML，可能与 AX 纯文本不同；当前没有全面的正文归一化。来源无法读取时返回 unverifiable 并跳过，不会把旧 fresh 状态当作重新验证成功。文件 watcher 只覆盖启动时已有的文件来源，新来源可显式运行 stale。
+URL 重取的是原始 HTML；来源指纹在抓取时经同一 fetcher 读取来源本身的内容后计算，重新校验因此比较同一种表示，不再把窗口文本当作来源内容。页面标记本身在两次抓取之间变化时仍可能报告变更；正文归一化仍未提供。来源无法读取时返回 unverifiable 并跳过，不会把旧 fresh 状态当作重新验证成功。文件 watcher 只覆盖启动时已有的文件来源，新来源可显式运行 stale。
 
 ## 运行记录
 
-v0.2.0 的真实文件捕获接口、规则抽取、SQLite 与重新校验。没有读取屏幕、访问 URL 或调用模型；临时目录自动清理。
+v0.3.0 的真实文件捕获接口、规则抽取、SQLite 与重新校验。没有读取屏幕、访问 URL 或调用模型；临时目录自动清理。
 
 [输入、命令和完整输出](docs/demo-results.json)
 

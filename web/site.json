@@ -11,7 +11,7 @@
   "meta": {
     "visual_profile": "neon-particle",
     "demo_source": "docs/demo-results.json",
-    "implementation_version": "0.2.0"
+    "implementation_version": "0.3.0"
   },
   "hero": {
     "eyebrow": {
@@ -117,8 +117,8 @@
           "en": "How the implementation fits together"
         },
         "body": {
-          "zh": "Capturer 提供文本与来源标签，FactExtractor 提取陈述，ingest_capture 写入来源与事实表。provenance 规范化内容后计算 SHA-256；Cascade 用文件、URL 或 doc_id fetcher 重新读取，再将旧指纹事实标为 stale 并保存 diff。macOS 菜单栏是可选的 Accessibility 捕获入口，CLI 可以无界面使用。",
-          "en": "A Capturer supplies text and source labels, a FactExtractor produces statements, and ingest_capture stores sources and facts. provenance normalizes content before SHA-256 hashing. Cascade rereads file, URL or doc_id sources, marks old-fingerprint facts stale and stores a diff. The optional macOS menu bar provides Accessibility capture; the CLI can run headlessly."
+          "zh": "Capturer 提供文本与来源标签，FactExtractor 提取陈述，ingest_capture 在窗口文本变化时经同一 fetcher 读取来源本身的内容，写入来源与事实表。provenance 规范化内容后计算 SHA-256；Cascade 用文件、URL 或 doc_id fetcher 重新读取，再将旧指纹事实标为 stale 并保存 diff。macOS 菜单栏是可选的 Accessibility 捕获入口，CLI 可以无界面使用。",
+          "en": "A Capturer supplies text and source labels, a FactExtractor produces statements, and ingest_capture reads the source itself through the same fetcher whenever the window text changes, storing sources and facts. provenance normalizes content before SHA-256 hashing. Cascade rereads file, URL or doc_id sources, marks old-fingerprint facts stale and stores a diff. The optional macOS menu bar provides Accessibility capture; the CLI can run headlessly."
         },
         "image": {
           "light": "/assets/presentation/architecture-light.svg",
@@ -175,8 +175,8 @@
       "en": "Run the supplied example"
     },
     "note": {
-      "zh": "v0.2.0 的真实文件捕获接口、规则抽取、SQLite 与重新校验。没有读取屏幕、访问 URL 或调用模型；临时目录自动清理。",
-      "en": "Real v0.2.0 file-capture interface, rule extraction, SQLite and rechecking. No screen is read, URL fetched or model called; temporary files are cleaned up."
+      "zh": "v0.3.0 的真实文件捕获接口、规则抽取、SQLite 与重新校验。没有读取屏幕、访问 URL 或调用模型；临时目录自动清理。",
+      "en": "Real v0.3.0 file-capture interface, rule extraction, SQLite and rechecking. No screen is read, URL fetched or model called; temporary files are cleaned up."
     },
     "source": "https://github.com/SuperMarioYL/suji/blob/main/docs/demo-results.json",
     "steps": [
@@ -228,8 +228,8 @@
       "en": "Invalidation is source-version based, not a per-statement truth judgment or complete semantic dependency analysis."
     },
     {
-      "zh": "本轮未验证屏幕权限、实际 App、URL 表示差异或模型抽取质量。",
-      "en": "This example does not validate screen permissions, real apps, URL representation differences or model extraction quality."
+      "zh": "本轮未验证屏幕权限、实际 App 或模型抽取质量；页面标记本身在两次抓取之间变化时仍可能报告变更。",
+      "en": "This example does not validate screen permissions, real apps or model extraction quality; a page whose markup itself changes between two fetches can still report a change."
     }
   ],
   "footer": {

@@ -52,8 +52,8 @@ class SourceRef:
     id: Optional[int] = None
 
 
-def _normalize(text: str) -> str:
-    """Collapse incidental whitespace for fingerprint stability.
+def normalize_text(text: str) -> str:
+    """Collapse incidental whitespace into the canonical form of captured text.
 
     A capture of the same article a few seconds apart may differ only in
     incidental whitespace introduced by the AX tree walk — trailing spaces
@@ -61,6 +61,10 @@ def _normalize(text: str) -> str:
     those keeps the fingerprint from false-flipping on every re-check,
     while still detecting real content edits (a number changing).
     Paragraph structure (a blank line) is preserved.
+
+    Both the source fingerprint (:func:`fingerprint`) and the stored fact
+    text use this form, so a fact's text and the key that decides whether it
+    is already known agree with each other.
     """
     if text is None:
         return ""
@@ -82,7 +86,7 @@ def fingerprint(text: str) -> str:
     This is the value stored on every fact at capture time and on the source
     record as the "last known current" fingerprint. Cascade compares them.
     """
-    return hashlib.sha256(_normalize(text).encode("utf-8")).hexdigest()
+    return hashlib.sha256(normalize_text(text).encode("utf-8")).hexdigest()
 
 
 def infer_kind(doc_url_or_id: str) -> SourceKind:
@@ -128,8 +132,8 @@ def source_diff(old: str, new: str, context_lines: int = 2) -> str:
     normalization). Stored on each fact marked stale so ``suji stale`` can
     show exactly what changed under the captured fact.
     """
-    old_n = _normalize(old).splitlines() if old else []
-    new_n = _normalize(new).splitlines() if new else []
+    old_n = normalize_text(old).splitlines() if old else []
+    new_n = normalize_text(new).splitlines() if new else []
     diff = difflib.unified_diff(
         old_n,
         new_n,

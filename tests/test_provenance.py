@@ -232,10 +232,34 @@ _ARTICLE = (
 )
 
 
+class _FakeSourceFetcher:
+    """Stands in for the cascade's re-read of a URL source.
+
+    The capture pipeline records a source's content by reading it through the
+    same fetcher the cascade uses; a test with a fake URL must inject one so
+    the suite never touches the network.
+    """
+
+    def __init__(self, content: str):
+        self._content = content
+
+    def fetch(self, source):  # noqa: ARG002 - protocol shape
+        return self._content
+
+
+def _fetcher_for(content: str):
+    return lambda _ref: _FakeSourceFetcher(content)
+
+
 def test_ingest_capture_stores_facts_with_source_fingerprint(tmp_path):
     store = SuJiStore(str(tmp_path / "suji.db"))
     try:
-        n = ingest_capture(_FakeCapturer(_ARTICLE), RuleBasedExtractor(), store)
+        n = ingest_capture(
+            _FakeCapturer(_ARTICLE),
+            RuleBasedExtractor(),
+            store,
+            fetcher_for=_fetcher_for(_ARTICLE),
+        )
         assert n >= 3  # at least the three fact-bearing sentences
 
         # `ask` traces back to the source URL — the m1 star-earning moment.
@@ -270,7 +294,12 @@ def test_ingest_capture_no_text_stores_nothing(tmp_path):
 def test_ask_is_case_insensitive_and_substring(tmp_path):
     store = SuJiStore(str(tmp_path / "suji.db"))
     try:
-        ingest_capture(_FakeCapturer(_ARTICLE), RuleBasedExtractor(), store)
+        ingest_capture(
+            _FakeCapturer(_ARTICLE),
+            RuleBasedExtractor(),
+            store,
+            fetcher_for=_fetcher_for(_ARTICLE),
+        )
         # CJK + lowercase ascii substring both match.
         assert store.search_facts("5000")
         assert store.search_facts("毛利率")
@@ -286,13 +315,14 @@ def test_recapture_same_article_keeps_one_source_and_does_not_crash(tmp_path):
     store = SuJiStore(str(tmp_path / "suji.db"))
     try:
         cap = _FakeCapturer(_ARTICLE)
-        n1 = ingest_capture(cap, RuleBasedExtractor(), store)
+        inject = _fetcher_for(_ARTICLE)
+        n1 = ingest_capture(cap, RuleBasedExtractor(), store, fetcher_for=inject)
         assert n1 >= 3
         # The second capture of the same window must not raise. v0.1.0
         # crashed here with IntegrityError: upsert_source returned a fact
         # rowid as the source id on the ON CONFLICT path, so add_fact hit
         # a FOREIGN KEY violation (or attached facts to the wrong source).
-        n2 = ingest_capture(cap, RuleBasedExtractor(), store)
+        n2 = ingest_capture(cap, RuleBasedExtractor(), store, fetcher_for=inject)
 
         srcs = store.list_sources()
         assert len(srcs) == 1
@@ -307,11 +337,14 @@ def test_recapture_same_content_adds_no_duplicate_facts(tmp_path):
     store = SuJiStore(str(tmp_path / "suji.db"))
     try:
         cap = _FakeCapturer(_ARTICLE)
-        first = ingest_capture(cap, RuleBasedExtractor(), store)
+        inject = _fetcher_for(_ARTICLE)
+        first = ingest_capture(cap, RuleBasedExtractor(), store, fetcher_for=inject)
         # The 5-second loop re-captures unchanged content repeatedly; none
         # of those ticks may store a duplicate fact.
         for _ in range(3):
-            assert ingest_capture(cap, RuleBasedExtractor(), store) == 0
+            assert (
+                ingest_capture(cap, RuleBasedExtractor(), store, fetcher_for=inject) == 0
+            )
         assert len(store.list_facts()) == first
         # ask shows each fact exactly once.
         assert len(store.search_facts("4.2")) == 1
@@ -322,17 +355,60 @@ def test_recapture_same_content_adds_no_duplicate_facts(tmp_path):
 def test_recapture_changed_content_adds_new_facts_with_new_fingerprint(tmp_path):
     store = SuJiStore(str(tmp_path / "suji.db"))
     try:
-        v1 = ingest_capture(_FakeCapturer(_ARTICLE), RuleBasedExtractor(), store)
+        v1 = ingest_capture(
+            _FakeCapturer(_ARTICLE), RuleBasedExtractor(), store, fetcher_for=_fetcher_for(_ARTICLE)
+        )
         assert v1 >= 1
         # The article is edited; the loop re-captures the new content. The
         # new facts carry the new capture-time fingerprint, so they are NOT
         # duplicates and must be added.
         edited = _ARTICLE.replace("4.2 亿", "4.3 亿")
-        v2 = ingest_capture(_FakeCapturer(edited), RuleBasedExtractor(), store)
+        v2 = ingest_capture(
+            _FakeCapturer(edited),
+            RuleBasedExtractor(),
+            store,
+            fetcher_for=_fetcher_for(edited),
+        )
         assert v2 >= 1
         assert len(store.list_facts()) == v1 + v2
         assert len(store.search_facts("4.3")) == 1
         # The old fact is still there (fresh until the cascade marks it).
+        assert len(store.search_facts("4.2")) == 1
+    finally:
+        store.close()
+
+
+def test_recapture_with_incidental_whitespace_jitter_adds_no_duplicate(tmp_path):
+    """AX re-walk whitespace jitter must not store the same fact twice.
+
+    The fingerprint already treats the two captures as the same document
+    (provenance.normalize_text), so the dedup key must agree; on v0.2.0 the
+    raw fact text was compared, and the jittered sentence was stored again.
+    """
+    jittered = (
+        "Q3  营收 4.2 亿，同比增长 12%。\n"  # doubled space
+        "用户规模达到 5000 万。   \n"  # trailing spaces
+        "本季度毛利率为 38%。\n"
+        "欢迎关注本公众号获取更多内容。\n"
+    )
+    assert fingerprint(_ARTICLE) == fingerprint(jittered)
+
+    store = SuJiStore(str(tmp_path / "suji.db"))
+    try:
+        first = ingest_capture(
+            _FakeCapturer(_ARTICLE), RuleBasedExtractor(), store, fetcher_for=_fetcher_for(_ARTICLE)
+        )
+        assert first >= 3
+        assert (
+            ingest_capture(
+                _FakeCapturer(jittered),
+                RuleBasedExtractor(),
+                store,
+                fetcher_for=_fetcher_for(jittered),
+            )
+            == 0
+        )
+        assert len(store.list_facts()) == first
         assert len(store.search_facts("4.2")) == 1
     finally:
         store.close()

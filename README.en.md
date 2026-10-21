@@ -24,7 +24,7 @@ A number can remain in your notes after its source changes. Keeping facts with t
 
 ## Architecture
 
-A Capturer supplies text and source labels, a FactExtractor produces statements, and ingest_capture stores sources and facts. provenance normalizes content before SHA-256 hashing. Cascade rereads file, URL or doc_id sources, marks old-fingerprint facts stale and stores a diff. The optional macOS menu bar provides Accessibility capture; the CLI can run headlessly.
+A Capturer supplies text and source labels, a FactExtractor produces statements, and ingest_capture reads the source itself through the same fetcher whenever the window text changes, storing sources and facts. provenance normalizes content before SHA-256 hashing. Cascade rereads file, URL or doc_id sources, marks old-fingerprint facts stale and stores a diff. The optional macOS menu bar provides Accessibility capture; the CLI can run headlessly.
 
 <picture>
   <source media="(max-width: 640px) and (prefers-color-scheme: dark)" srcset="assets/presentation/architecture-mobile-dark.svg">
@@ -68,7 +68,7 @@ python -m pip install -e ".[macos]"
 SUJI_NO_LLM=1 suji-bar
 ```
 
-ask is a database keyword search, not model question answering. stale refetches stored sources and may use the network for URLs; --list-only displays facts already marked stale. The menu bar reads accessible focused-window text rather than screenshots/OCR.
+ask is a database keyword search, not model question answering. stale refetches stored sources and may use the network for URLs; --list-only displays facts already marked stale. The menu bar reads accessible focused-window text rather than screenshots/OCR. For URL and local-file sources a capture also reads the source itself through the same fetcher to record its fingerprint (an unchanged window is not re-read, and only URL sources use the network).
 
 ## Capabilities and integrations
 
@@ -98,11 +98,11 @@ ask is a database keyword search, not model question answering. stale refetches 
 
 The model endpoint defaults to local but can be configured elsewhere; network isolation is not enforced. Without NO_LLM, the model extractor is selected. A failed request does not automatically become a successful rule extraction.
 
-URL rechecks retrieve raw HTML, which may differ from AX text; comprehensive body normalization is absent. Unreadable sources return unverifiable and are skipped, so a previous fresh label is not a newly successful verification. File watching covers sources present at startup; explicitly run stale for new sources.
+URL rechecks retrieve raw HTML; a source's fingerprint is computed at capture time from the source's own content, read through the same fetcher the recheck uses, so a recheck compares like with like instead of the captured window text. A page whose markup itself changes between two fetches can still report a change; body normalization is still absent. Unreadable sources return unverifiable and are skipped, so a previous fresh label is not a newly successful verification. File watching covers sources present at startup; explicitly run stale for new sources.
 
 ## Recorded demo
 
-Real v0.2.0 file-capture interface, rule extraction, SQLite and rechecking. No screen is read, URL fetched or model called; temporary files are cleaned up.
+Real v0.3.0 file-capture interface, rule extraction, SQLite and rechecking. No screen is read, URL fetched or model called; temporary files are cleaned up.
 
 [Inputs, commands and complete output](docs/demo-results.json)
 

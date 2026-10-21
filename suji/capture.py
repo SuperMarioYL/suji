@@ -14,10 +14,17 @@ the capture layer is exercised without any macOS API.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Protocol, runtime_checkable
+from typing import Callable, Optional, Protocol, runtime_checkable
 
+from .cascade import SourceFetcher, make_fetcher
 from .llm import FactExtractor
-from .provenance import ExtractedFact, make_source_ref
+from .provenance import (
+    ExtractedFact,
+    SourceKind,
+    SourceRef,
+    fingerprint,
+    make_source_ref,
+)
 from .store import SuJiStore
 
 # The macOS AX bindings are imported lazily and defensively; the module must
@@ -226,24 +233,62 @@ def capture_pipeline(capturer: Capturer) -> CapturedText:
     return capturer.capture()
 
 
+def source_content_for(
+    ref: SourceRef,
+    captured_text: str,
+    capture_fingerprint: str,
+    store: SuJiStore,
+    fetcher_for: Optional[Callable[[SourceRef], SourceFetcher]] = None,
+) -> str:
+    """The source's own content for this capture.
+
+    The cascade re-reads a source through its fetcher, so the fingerprint the
+    source is stored under must be computed over that same representation: a
+    公众号 page's fetched content, or a local file's content — NOT the window
+    text the AX walk produced. They are different representations of the same
+    document and never fingerprint equal, so mixing them made every re-check
+    report a mutation. Non-fetchable sources (钉钉 / WPS cloud doc ids, which v0.1
+    cannot re-read) keep the captured text as their content.
+
+    The source is only read when the window text changed since the last
+    capture; the 5-second loop otherwise reuses the content already stored.
+    """
+    if ref.source_kind is SourceKind.DOC_ID:
+        return captured_text
+
+    existing = store.get_source_by_doc(ref.doc_url_or_id)
+    if existing is not None and (
+        store.source_capture_fingerprint(existing.id) == capture_fingerprint  # type: ignore[arg-type]
+    ):
+        return store.source_last_content(existing.id) or captured_text  # type: ignore[arg-type]
+
+    fetcher = (fetcher_for or make_fetcher)(ref)
+    content = fetcher.fetch(ref)
+    # Offline / unreadable source: fall back to what the window showed, so the
+    # capture is still recorded and the next successful re-check decides.
+    return content if content is not None else captured_text
+
+
 def ingest_capture(
     capturer: Capturer,
     extractor: FactExtractor,
     store: SuJiStore,
+    *,
+    fetcher_for: Optional[Callable[[SourceRef], SourceFetcher]] = None,
 ) -> int:
     """Run one capture → extract → persist cycle; return the fact count.
 
     This is the m1 happy path, factored out of the menu-bar app so the test
     suite and ``examples/seed_demo.py`` can drive it with a fake capturer +
-    the rule-based extractor, without rumps or a live Qwen3. Every extracted
-    fact is stored with ``source_fingerprint`` = the captured source
-    content's hash at capture time (the cascade invariant).
+    the rule-based extractor, without rumps or a live Qwen3.
 
-    The capture loop calls this every few seconds on the same focused
-    window, so facts already stored for the same (source, capture-time
-    fingerprint, text) are skipped — re-capturing unchanged content adds
-    nothing, while facts from changed content carry a new fingerprint and
-    are always added.
+    Each fact is stored with ``source_fingerprint`` = the source's own content
+    fingerprint at capture time (the cascade invariant). Its text keeps the
+    captured wording; de-duplication compares the canonical form, so the
+    re-capture of the same window cannot store the same fact twice.
+
+    ``fetcher_for`` overrides how a source is read back (defaults to the same
+    ``make_fetcher`` dispatch the cascade uses); tests inject a fake.
     """
     captured = capturer.capture()
     text = captured.text or ""
@@ -255,13 +300,13 @@ def ingest_capture(
         doc_title=captured.doc_title,
         capture_context=captured.capture_context,
     )
-    source_id = store.upsert_source(ref, text)
-    # upsert_source already recorded the current fingerprint as
-    # fingerprint(text); reuse it so the fact's capture-time fp is identical
-    # to the source's current fp at ingestion (they only diverge on mutation).
-    from .provenance import fingerprint
+    capture_fp = fingerprint(text)
+    source_id = store.upsert_source(
+        ref, source_content_for(ref, text, capture_fp, store, fetcher_for)
+    )
+    store.record_capture(source_id, capture_fp)
+    fp = store.source_fingerprint(source_id)
 
-    fp = fingerprint(text)
     count = 0
     for ef in extractor.extract(text):
         if not ef.text.strip():

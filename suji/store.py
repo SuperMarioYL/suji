@@ -8,8 +8,12 @@ capture-time fingerprint).
 Schema (two tables):
 
 * ``sources`` — one row per addressed document. ``doc_url_or_id`` is unique;
-  ``fingerprint`` is the *current* content hash, ``last_content`` the content
-  it was computed from (kept so cascade can diff old vs new on mutation).
+  ``fingerprint`` is the *current* content hash of the source as its fetcher
+  reads it, ``last_content`` the content it was computed from (kept so cascade
+  can diff old vs new on mutation), and ``capture_fingerprint`` the hash of the
+  captured window text at the last capture (the capture-side "is there anything
+  new" marker — a different representation, so it is never mixed with
+  ``fingerprint``).
 * ``facts`` — one row per discrete captured fact. ``source_fingerprint`` is
   the content hash *at capture time*; ``status`` is only ever written by the
   cascade (fresh → stale), never by the user.
@@ -19,10 +23,11 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from typing import Optional
 
-from .provenance import Fact, SourceKind, SourceRef, fingerprint
+from .provenance import Fact, SourceKind, SourceRef, fingerprint, normalize_text
 
 
 def _now_iso() -> str:
@@ -45,25 +50,26 @@ def default_db_path() -> str:
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS sources (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    app_bundle      TEXT NOT NULL,
-    doc_url_or_id   TEXT NOT NULL UNIQUE,
-    doc_title       TEXT NOT NULL DEFAULT '',
-    source_kind     TEXT NOT NULL,
-    capture_context TEXT NOT NULL DEFAULT '',
-    fingerprint     TEXT NOT NULL DEFAULT '',
-    last_content    TEXT NOT NULL DEFAULT '',
-    last_checked_at TEXT NOT NULL DEFAULT '',
-    created_at      TEXT NOT NULL
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    app_bundle         TEXT NOT NULL,
+    doc_url_or_id      TEXT NOT NULL UNIQUE,
+    doc_title          TEXT NOT NULL DEFAULT '',
+    source_kind        TEXT NOT NULL,
+    capture_context    TEXT NOT NULL DEFAULT '',
+    fingerprint        TEXT NOT NULL DEFAULT '',
+    last_content       TEXT NOT NULL DEFAULT '',
+    last_checked_at    TEXT NOT NULL DEFAULT '',
+    created_at         TEXT NOT NULL,
+    capture_fingerprint TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS facts (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     source_id          INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
     text               TEXT NOT NULL,
-    captured_at       TEXT NOT NULL,
+    captured_at        TEXT NOT NULL,
     source_fingerprint TEXT NOT NULL,
-    status            TEXT NOT NULL DEFAULT 'fresh',
+    status             TEXT NOT NULL DEFAULT 'fresh',
     diff               TEXT NOT NULL DEFAULT '',
     note               TEXT NOT NULL DEFAULT ''
 );
@@ -71,6 +77,50 @@ CREATE TABLE IF NOT EXISTS facts (
 CREATE INDEX IF NOT EXISTS idx_facts_source ON facts(source_id);
 CREATE INDEX IF NOT EXISTS idx_facts_status ON facts(status);
 """
+
+# Columns added after a database may already exist. CREATE TABLE IF NOT EXISTS
+# never alters an existing table, so each is added explicitly on open.
+_ADDED_SOURCE_COLUMNS = {
+    "capture_fingerprint": "TEXT NOT NULL DEFAULT ''",
+}
+
+
+class _SharedConnection:
+    """The store's single sqlite connection, serialised across threads.
+
+    The store is shared by the menu-bar capture loop (main thread) and the
+    watchdog file-watcher callback (the observer thread — see
+    ``suji.menu_bar.SuJiApp._start_file_watcher``). sqlite3 refuses a
+    connection created on another thread unless ``check_same_thread=False``,
+    and one connection's statements must not interleave, so every call is
+    taken under one re-entrant lock. Keeping the lock here rather than at each
+    call site leaves the rest of the store unchanged.
+    """
+
+    def __init__(self, conn: sqlite3.Connection, lock: "threading.RLock"):
+        self._conn = conn
+        self._lock = lock
+
+    def execute(self, sql: str, params=()):
+        with self._lock:
+            return self._conn.execute(sql, params)
+
+    def executescript(self, script: str):
+        with self._lock:
+            return self._conn.executescript(script)
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
+
+    def __enter__(self) -> "_SharedConnection":
+        return self
+
+    def __exit__(self, *exc) -> bool:
+        with self._lock:
+            self._conn.commit()
+        return False
+
 
 
 class SuJiStore:
@@ -85,10 +135,28 @@ class SuJiStore:
         self.path = path or default_db_path()
         # isolation_level=None → autocommit; we use explicit transactions
         # for the cascade's multi-row stale update.
-        self._conn = sqlite3.connect(self.path, isolation_level=None)
-        self._conn.row_factory = sqlite3.Row
+        raw = sqlite3.connect(self.path, isolation_level=None, check_same_thread=False)
+        raw.row_factory = sqlite3.Row
+        self._conn = _SharedConnection(raw, threading.RLock())
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.executescript(_SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Add columns introduced after a database was first created.
+
+        A user's ``~/.suji/suji.db`` was created by an earlier version and the
+        schema above is CREATE TABLE IF NOT EXISTS, so it keeps its old columns;
+        new ones are added here instead of failing every later query.
+        """
+        existing = {
+            row["name"] for row in self._conn.execute("PRAGMA table_info(sources)")
+        }
+        for column, spec in _ADDED_SOURCE_COLUMNS.items():
+            if column not in existing:
+                self._conn.execute(
+                    f"ALTER TABLE sources ADD COLUMN {column} {spec}"
+                )
 
     # ----- lifecycle -----
     def close(self) -> None:
@@ -104,9 +172,12 @@ class SuJiStore:
     def upsert_source(self, ref: SourceRef, content: str) -> int:
         """Create the source if new, else refresh its metadata.
 
-        The capture pipeline calls this with the just-captured document
-        content; the fingerprint + content are stored as the source's
-        current state. Returns the source id.
+        ``content`` is the SOURCE's own content — what the source's fetcher
+        would read back (a 公众号 page's fetched bytes, a local file's text) —
+        not the captured window text, which is a different representation of
+        the same document and is recorded separately by :meth:`record_capture`.
+        The fingerprint + content are stored as the source's current state.
+        Returns the source id.
 
         The id is resolved by ``doc_url_or_id`` after the upsert: on the
         ON CONFLICT (update) path SQLite does not refresh the connection's
@@ -211,6 +282,27 @@ class SuJiStore:
         ).fetchone()
         return row["last_content"] if row else ""
 
+    def source_capture_fingerprint(self, source_id: int) -> str:
+        """Fingerprint of the window text read at the last capture.
+
+        Kept apart from :meth:`source_fingerprint` (the source's own content):
+        the two are different representations of the same document, so the
+        capture loop compares the window text against this to decide whether
+        there is anything new to ingest.
+        """
+        row = self._conn.execute(
+            "SELECT capture_fingerprint FROM sources WHERE id = ?", (source_id,)
+        ).fetchone()
+        return row["capture_fingerprint"] if row else ""
+
+    def record_capture(self, source_id: int, capture_fingerprint: str) -> None:
+        """Record the fingerprint of the window text this capture read."""
+        with self._conn:
+            self._conn.execute(
+                "UPDATE sources SET capture_fingerprint = ? WHERE id = ?",
+                (capture_fingerprint, source_id),
+            )
+
     def mark_source_checked(self, source_id: int) -> None:
         """Refresh ``last_checked_at`` after a successful re-check.
 
@@ -254,14 +346,20 @@ class SuJiStore:
         capture-time fingerprint, and re-adding them would flood ``ask``
         with duplicates. A fact extracted from *changed* content carries a
         different fingerprint and is never considered a duplicate.
+
+        Comparison is on the canonical form
+        (``provenance.normalize_text``), not the raw string: the fingerprint
+        already treats an AX re-walk's incidental whitespace jitter as the same
+        document, so the dedup key must agree with it. The stored text keeps the
+        captured wording.
         """
-        row = self._conn.execute(
-            "SELECT 1 FROM facts "
-            "WHERE source_id = ? AND text = ? AND source_fingerprint = ? "
-            "LIMIT 1",
-            (source_id, text, source_fingerprint),
-        ).fetchone()
-        return row is not None
+        key = normalize_text(text)
+        rows = self._conn.execute(
+            "SELECT text FROM facts "
+            "WHERE source_id = ? AND source_fingerprint = ?",
+            (source_id, source_fingerprint),
+        ).fetchall()
+        return any(normalize_text(row["text"]) == key for row in rows)
 
     def get_fact(self, fact_id: int) -> Optional[Fact]:
         row = self._conn.execute(

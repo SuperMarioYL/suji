@@ -9,11 +9,16 @@ the demo GIF flow: capture → ask → edit source → ``stale``.
 
 from __future__ import annotations
 
+import contextlib
+import http.server
 import os
+import socketserver
+import tempfile
+import threading
 
 import pytest
 
-from suji.cascade import Cascade, DocIdFetcher, FileFetcher, make_fetcher
+from suji.cascade import Cascade, DocIdFetcher, FileFetcher, UrlFetcher, make_fetcher
 from suji.capture import CapturedText, ingest_capture
 from suji.llm import RuleBasedExtractor
 from suji.provenance import SourceKind, fingerprint, make_source_ref, source_diff
@@ -63,6 +68,40 @@ class _FileCapturer:
             app_bundle=self._app,
             doc_url_or_id=self._path,
             doc_title=os.path.basename(self._path),
+            capture_context="ax",
+        )
+
+
+class _RecordingFetcher:
+    """Counts how many times the source was actually read."""
+
+    def __init__(self, content: str):
+        self._content = content
+        self.calls = 0
+
+    def fetch(self, source):
+        self.calls += 1
+        return self._content
+
+
+class _UrlCapturer:
+    """A capturer for a 公众号-shaped URL source.
+
+    ``text`` is what the AX walk yields for the rendered page — a *different*
+    representation of the same document than the page's HTML, which is exactly
+    the situation the shipped re-check got wrong.
+    """
+
+    def __init__(self, text: str, url: str):
+        self._text = text
+        self._url = url
+
+    def capture(self) -> CapturedText:
+        return CapturedText(
+            text=self._text,
+            app_bundle="com.apple.Safari",
+            doc_url_or_id=self._url,
+            doc_title="Q3 财报速递",
             capture_context="ax",
         )
 
@@ -367,5 +406,155 @@ def test_end_to_end_capture_ask_edit_stale(tmp_path):
         # And `ask` now reports the fact as stale (status surfaced to user).
         again = store.search_facts("4.2")[0]
         assert again.status == "stale"
+    finally:
+        store.close()
+
+
+# --------------------------------------------------------------------------- #
+# URL sources: the re-check must compare the source's own representation, not
+# the captured window text (v0.3.0)
+# --------------------------------------------------------------------------- #
+_AX_TEXT_V1 = "Q3 财报速递\nQ3 营收 4.2 亿，同比增长 12%。"
+_HTML_V1 = (
+    "<html><head><title>Q3 财报速递</title></head><body>"
+    "<div class='rich_media_content'><p>Q3 营收 4.2 亿，同比增长 12%。</p></div>"
+    "</body></html>"
+)
+_HTML_V2 = _HTML_V1.replace("4.2 亿", "4.3 亿").replace("12%", "15%")
+
+
+@contextlib.contextmanager
+def _serving(html: str):
+    """Serve one HTML page over a real local socket (UrlFetcher's target)."""
+    directory = tempfile.mkdtemp(prefix="suji-serve-")
+    page = os.path.join(directory, "index.html")
+    with open(page, "w", encoding="utf-8") as fh:
+        fh.write(html)
+
+    class _Handler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=directory, **kwargs)
+
+        def log_message(self, *args):  # keep test output clean
+            pass
+
+    try:
+        server = socketserver.TCPServer(("127.0.0.1", 0), _Handler)
+    except OSError as exc:  # a sandbox without sockets is not this contract
+        pytest.skip(f"cannot bind a local socket: {exc}")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        def rewrite(new_html: str) -> None:
+            with open(page, "w", encoding="utf-8") as fh:
+                fh.write(new_html)
+
+        yield f"http://127.0.0.1:{server.server_address[1]}/index.html", rewrite
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_recapture_of_an_unchanged_window_does_not_re_read_the_source(tmp_path):
+    """The 5-second loop must not probe the source while the window text is stable.
+
+    This is the gate that keeps a URL source from being fetched on every tick.
+    """
+    store = SuJiStore(str(tmp_path / "suji.db"))
+    try:
+        fetcher = _RecordingFetcher(_HTML_V1)
+
+        def inject(_ref):
+            return fetcher
+
+        cap = _UrlCapturer(_AX_TEXT_V1, "https://mp.weixin.qq.com/s/abc")
+        assert ingest_capture(cap, RuleBasedExtractor(), store, fetcher_for=inject) >= 1
+        assert fetcher.calls == 1
+
+        # Same window text again (the loop's steady state): no second read.
+        assert ingest_capture(cap, RuleBasedExtractor(), store, fetcher_for=inject) == 0
+        assert fetcher.calls == 1
+    finally:
+        store.close()
+
+
+def test_url_recheck_does_not_false_stale_an_unchanged_article(tmp_path):
+    """The first `suji stale` of an UNEDITED 公众号 article must not stale anything.
+
+    On v0.2.0 the captured window text was fingerprinted as the source's content,
+    so the re-fetched raw HTML never matched and every fact was staled.
+    """
+    with _serving(_HTML_V1) as (url, _rewrite):
+        store = SuJiStore(str(tmp_path / "suji.db"))
+        try:
+            cap = _UrlCapturer(_AX_TEXT_V1, url)
+            assert ingest_capture(
+                cap, RuleBasedExtractor(), store, fetcher_for=lambda _ref: UrlFetcher()
+            ) >= 1
+            source_id = store.list_sources()[0].id
+
+            result = Cascade(
+                store, fetcher_for=lambda _ref: UrlFetcher()
+            ).recheck_source(source_id)  # type: ignore[arg-type]
+
+            assert result.error == ""
+            assert result.mutated is False
+            assert result.stale_count == 0
+            assert {f.status for f in store.list_facts(source_id=source_id)} == {"fresh"}  # type: ignore[arg-type]
+            assert store.list_stale() == []
+        finally:
+            store.close()
+
+
+def test_url_recheck_stales_after_the_served_page_changes(tmp_path):
+    """An actually edited 公众号 article must still cascade to stale."""
+    with _serving(_HTML_V1) as (url, rewrite):
+        store = SuJiStore(str(tmp_path / "suji.db"))
+        try:
+            cap = _UrlCapturer(_AX_TEXT_V1, url)
+            assert ingest_capture(
+                cap, RuleBasedExtractor(), store, fetcher_for=lambda _ref: UrlFetcher()
+            ) >= 1
+            source_id = store.list_sources()[0].id
+
+            rewrite(_HTML_V2)
+            result = Cascade(
+                store, fetcher_for=lambda _ref: UrlFetcher()
+            ).recheck_source(source_id)  # type: ignore[arg-type]
+
+            assert result.mutated is True
+            assert result.stale_count >= 1
+            stales = store.list_stale()
+            assert stales
+            assert all("4.3 亿" in s.diff for s in stales)
+        finally:
+            store.close()
+
+
+def test_recapture_then_recheck_heals_through_the_capture_path(tmp_path):
+    """The v0.2.0 heal must hold on the real ingest_capture path, not just on upsert.
+
+    Sequence: capture V1 -> article edited -> the loop re-captures V2 (advancing
+    the source's stored fingerprint) -> `suji stale`. No NEW mutation is detected,
+    yet the facts captured from V1 must cascade to stale.
+    """
+    path = tmp_path / "article.txt"
+    path.write_text(_ARTICLE_V1, encoding="utf-8")
+
+    store = SuJiStore(str(tmp_path / "suji.db"))
+    try:
+        ingest_capture(_FileCapturer(str(path)), RuleBasedExtractor(), store)
+        path.write_text(_ARTICLE_V2, encoding="utf-8")
+        ingest_capture(_FileCapturer(str(path)), RuleBasedExtractor(), store)
+
+        source_id = store.list_sources()[0].id
+        result = Cascade(store).recheck_source(source_id)  # type: ignore[arg-type]
+
+        assert result.mutated is False
+        assert result.stale_count == 2
+        statuses = {f.text: f.status for f in store.list_facts(source_id=source_id)}  # type: ignore[arg-type]
+        assert statuses["Q3 营收 4.2 亿，同比增长 12%。"] == "stale"
+        assert statuses["Q3 营收 4.3 亿，同比增长 15%。"] == "fresh"
     finally:
         store.close()
