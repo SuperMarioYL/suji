@@ -230,6 +230,10 @@
     {
       "zh": "本轮未验证屏幕权限、实际 App 或模型抽取质量；页面标记本身在两次抓取之间变化时仍可能报告变更。",
       "en": "This example does not validate screen permissions, real apps or model extraction quality; a page whose markup itself changes between two fetches can still report a change."
+    },
+    {
+      "zh": "无法读取的来源（离线、云文档 id、临时为空的文件）按“未校验”处理，不计入“无失效事实”，已有内容指纹保持不变。",
+      "en": "A source that cannot be read (offline, cloud-doc id, a momentarily empty file) is reported as unverified rather than as a clean check, and its recorded fingerprint is kept."
     }
   ],
   "footer": {
