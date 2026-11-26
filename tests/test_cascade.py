@@ -18,7 +18,14 @@ import threading
 
 import pytest
 
-from suji.cascade import Cascade, DocIdFetcher, FileFetcher, UrlFetcher, make_fetcher
+from suji.cascade import (
+    Cascade,
+    DocIdFetcher,
+    FileFetcher,
+    UrlFetcher,
+    make_fetcher,
+    summarize_recheck,
+)
 from suji.capture import CapturedText, ingest_capture
 from suji.llm import RuleBasedExtractor
 from suji.provenance import SourceKind, fingerprint, make_source_ref, source_diff
@@ -556,5 +563,107 @@ def test_recapture_then_recheck_heals_through_the_capture_path(tmp_path):
         statuses = {f.text: f.status for f in store.list_facts(source_id=source_id)}  # type: ignore[arg-type]
         assert statuses["Q3 营收 4.2 亿，同比增长 12%。"] == "stale"
         assert statuses["Q3 营收 4.3 亿，同比增长 15%。"] == "fresh"
+    finally:
+        store.close()
+
+
+# --------------------------------------------------------------------------- #
+# Error paths on the fingerprint comparison: a read that yields nothing must
+# never be mistaken for source content (v0.4.0)
+# --------------------------------------------------------------------------- #
+class _Unreachable:
+    """A fetcher for a source that cannot be read right now (offline)."""
+
+    def fetch(self, source):
+        return None
+
+
+def test_capture_while_the_source_is_unreadable_keeps_the_known_revision(tmp_path):
+    """An offline capture must not stamp the window text over the source revision.
+
+    The window text is the *other* representation the re-check compares
+    against, so recording it as the source's content made the next successful
+    re-check of an unchanged page report the whole document as rewritten.
+    """
+    store = SuJiStore(str(tmp_path / "suji.db"))
+    try:
+        url = "https://mp.weixin.qq.com/s/abc"
+        # The page is readable: the source records the fetched HTML, not AX text.
+        assert ingest_capture(
+            _UrlCapturer(_AX_TEXT_V1, url), RuleBasedExtractor(), store,
+            fetcher_for=lambda _r: _RecordingFetcher(_HTML_V1),
+        ) >= 1
+        source_id = store.list_sources()[0].id
+
+        # The loop captures a different window text while the network is down.
+        ingest_capture(
+            _UrlCapturer(_AX_TEXT_V1 + "\nQ3 财报速递（续）", url),
+            RuleBasedExtractor(), store,
+            fetcher_for=lambda _r: _Unreachable(),
+        )
+        assert store.source_last_content(source_id) == _HTML_V1  # type: ignore[arg-type]
+
+        # The page never changed, so the re-check must stay clean.
+        result = Cascade(
+            store, fetcher_for=lambda _r: _RecordingFetcher(_HTML_V1)
+        ).recheck_source(source_id)  # type: ignore[arg-type]
+        assert result.mutated is False
+        assert result.stale_count == 0
+    finally:
+        store.close()
+
+
+def test_blank_reread_is_unverifiable_and_keeps_the_revision(tmp_path):
+    """A 0-byte read is a failed read, not a mutation to empty.
+
+    An editor's truncate-then-write save exposes an empty file for a moment and
+    the watchdog fires inside that window; treating it as content stamped the
+    source empty, staled every fact and destroyed the revision the diff is
+    built from.
+    """
+    path = tmp_path / "report.txt"
+    path.write_text(_ARTICLE_V1, encoding="utf-8")
+
+    store = SuJiStore(str(tmp_path / "suji.db"))
+    try:
+        ingest_capture(_FileCapturer(str(path)), RuleBasedExtractor(), store)
+        source_id = store.list_sources()[0].id
+
+        path.write_text("", encoding="utf-8")
+        result = Cascade(store).recheck_source(source_id)  # type: ignore[arg-type]
+
+        assert result.error == "unverifiable"
+        assert result.mutated is False
+        assert result.stale_count == 0
+        assert store.source_last_content(source_id) == _ARTICLE_V1  # type: ignore[arg-type]
+        assert {
+            f.status for f in store.list_facts(source_id=source_id)  # type: ignore[arg-type]
+        } == {"fresh"}
+
+        # The revision survived, so restoring the same content is no mutation.
+        path.write_text(_ARTICLE_V1, encoding="utf-8")
+        assert not Cascade(store).recheck_source(source_id).mutated  # type: ignore[arg-type]
+    finally:
+        store.close()
+
+
+def test_summarize_recheck_classifies_what_was_read(tmp_path):
+    """One definition of "verified", shared by every reporter."""
+    store = SuJiStore(str(tmp_path / "suji.db"))
+    try:
+        store.upsert_source(make_source_ref("a", "https://x.com/a", "a"), _ARTICLE_V1)
+        store.upsert_source(
+            make_source_ref("b", "dingtalk-doc-1", "b"), _ARTICLE_V1
+        )
+
+        def fetcher_for(source):
+            return _FakeFetcher(_ARTICLE_V2) if source.source_kind is SourceKind.URL else DocIdFetcher()
+
+        summary = summarize_recheck(Cascade(store, fetcher_for=fetcher_for).recheck_all())
+
+        assert summary.sources == 2
+        assert summary.verified == 1
+        assert summary.unverifiable == 1
+        assert summary.mutated == 1
     finally:
         store.close()

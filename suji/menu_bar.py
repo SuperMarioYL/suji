@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import Optional
 
 from .capture import Capturer, MacAXCapturer, ingest_capture
-from .cascade import Cascade, start_file_watcher
+from .cascade import Cascade, start_file_watcher, summarize_recheck
 from .llm import FactExtractor, make_extractor
 from .store import SuJiStore
 
@@ -107,11 +107,16 @@ def _build_app(capturer: Capturer, extractor: FactExtractor, store: SuJiStore):
 
         @rumps.clicked("校验失效")  # type: ignore[attr-defined]
         def recheck_now(self, _item):  # type: ignore[override]
-            cascade = Cascade(self._store)
-            results = cascade.recheck_all()
-            mutated = sum(1 for r in results if r.mutated)
+            summary = summarize_recheck(Cascade(self._store).recheck_all())
             stales = len(self._store.list_stale())
-            msg = f"{mutated} 个来源变更，{stales} 条事实失效" if stales else "无失效事实"
+            if stales:
+                msg = f"{summary.mutated} 个来源变更，{stales} 条事实失效"
+            elif summary.sources == 0:
+                msg = "尚未记忆任何来源，无内容可校验"
+            elif summary.verified == 0:
+                msg = f"{summary.unverifiable} 个来源无法读取，本轮未校验"
+            else:
+                msg = f"{summary.verified} 个来源已校验，无失效事实"
             rumps.notification("溯记", "来源再校验", msg)  # type: ignore[attr-defined]
 
     return SuJiApp

@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Optional, Protocol, runtime_checkable
 
-from .cascade import SourceFetcher, make_fetcher
+from .cascade import SourceFetcher, make_fetcher, read_source_content
 from .llm import FactExtractor
 from .provenance import (
     ExtractedFact,
@@ -252,6 +252,13 @@ def source_content_for(
 
     The source is only read when the window text changed since the last
     capture; the 5-second loop otherwise reuses the content already stored.
+
+    When the read yields nothing (offline, unreadable, 0-byte), the revision
+    already recorded for this source is reused: the window text is the other
+    representation the re-check compares against, so stamping it as the
+    source's content would make the next successful re-check report the whole
+    document as rewritten. Only a source with no recorded revision at all
+    falls back to the window text, because nothing better exists for it.
     """
     if ref.source_kind is SourceKind.DOC_ID:
         return captured_text
@@ -263,10 +270,14 @@ def source_content_for(
         return store.source_last_content(existing.id) or captured_text  # type: ignore[arg-type]
 
     fetcher = (fetcher_for or make_fetcher)(ref)
-    content = fetcher.fetch(ref)
-    # Offline / unreadable source: fall back to what the window showed, so the
-    # capture is still recorded and the next successful re-check decides.
-    return content if content is not None else captured_text
+    content = read_source_content(fetcher, ref)
+    if content is not None:
+        return content
+    if existing is not None:
+        known = store.source_last_content(existing.id)  # type: ignore[arg-type]
+        if known.strip():
+            return known
+    return captured_text
 
 
 def ingest_capture(

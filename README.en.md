@@ -102,7 +102,7 @@ URL rechecks retrieve raw HTML; a source's fingerprint is computed at capture ti
 
 ## Recorded demo
 
-Real v0.3.0 file-capture interface, rule extraction, SQLite and rechecking. No screen is read, URL fetched or model called; temporary files are cleaned up.
+Real v0.4.0 file-capture interface, rule extraction, SQLite and rechecking. No screen is read, URL fetched or model called; temporary files are cleaned up.
 
 [Inputs, commands and complete output](docs/demo-results.json)
 

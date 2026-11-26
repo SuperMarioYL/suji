@@ -47,3 +47,14 @@ def test_readme_and_site_quote_the_current_version():
     assert f"v{version}" in _read("README.md")
     assert f"v{version}" in _read("README.en.md")
     assert f"v{version}" in json.dumps(json.loads(_read("web/site.json")), ensure_ascii=False)
+
+
+def test_user_agent_carries_the_current_version():
+    """The re-fetch User-Agent is a version surface too.
+
+    It sat at ``SuJi/0.1`` through v0.3.0 because nothing read it: every source
+    re-check announced the wrong client version.
+    """
+    from suji.cascade import _UA
+
+    assert f"SuJi/{_read('VERSION').strip()}" in _UA

@@ -19,11 +19,13 @@ from typing import Optional
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
 from . import __version__
-from .cascade import Cascade
+from .cascade import Cascade, summarize_recheck
+from .provenance import CascadeResult
 from .store import SuJiStore, default_db_path
 
 app = typer.Typer(
@@ -79,7 +81,7 @@ def ask(
                 "灌入示例数据。[/dim]"
             )
             return
-        table = Table(title=f"溯源：{query}", show_lines=True)
+        table = Table(title=f"溯源：{escape(query)}", show_lines=True)
         table.add_column("事实", style="cyan", ratio=2)
         table.add_column("来源应用", style="magenta")
         table.add_column("文档 / 链接", style="blue")
@@ -90,14 +92,17 @@ def ask(
             status = "[red]失效[/red]" if fact.status == "stale" else "[green]有效[/green]"
             doc = source.doc_url_or_id if source else "—"
             app_bundle = source.app_bundle if source else "—"
+            # Captured text is shown verbatim: rich would otherwise eat a
+            # "[red]"-shaped token as a style tag.
             table.add_row(
-                fact.text, app_bundle, doc, _trim_ts(fact.captured_at), status
+                escape(fact.text), escape(app_bundle), escape(doc),
+                _trim_ts(fact.captured_at), status,
             )
         console.print(table)
         # Surface the source link for the first match (the 公众号 URL).
         first_source = store.get_source(facts[0].source_id)
         if first_source and first_source.source_kind.value == "url":
-            console.print(f"[blue]来源：{first_source.doc_url_or_id}[/blue]")
+            console.print(f"[blue]来源：{escape(first_source.doc_url_or_id)}[/blue]")
     finally:
         store.close()
 
@@ -120,13 +125,13 @@ def stale(
     """
     store = SuJiStore()
     try:
+        results: Optional[list[CascadeResult]] = None
         if not only_list:
-            cascade = Cascade(store)
-            results = cascade.recheck_all()
+            results = Cascade(store).recheck_all()
             _print_recheck(results, store)
         stales = store.list_stale()
         if not stales:
-            console.print("[green]无失效事实。[/green]")
+            console.print(_clean_report(results))
             return
         table = Table(title="失效事实（来源已变更）", show_lines=True)
         table.add_column("事实", style="red", ratio=2)
@@ -135,10 +140,35 @@ def stale(
         for fact in stales:
             source = store.get_source(fact.source_id)
             doc = source.doc_url_or_id if source else "—"
-            table.add_row(fact.text, doc, fact.diff or "（无 diff）")
+            table.add_row(
+                escape(fact.text), escape(doc), escape(fact.diff or "（无 diff）")
+            )
         console.print(table)
     finally:
         store.close()
+
+
+def _clean_report(results: Optional[list[CascadeResult]]) -> str:
+    """The "nothing stale" line, honest about whether anything was checked.
+
+    "No stale facts" is a passing check only when at least one source was
+    actually read. With no sources, or only unreadable ones, nothing was
+    compared — the green line would manufacture a pass from zero observations.
+    """
+    if results is None:  # --list-only: no re-check was requested
+        return "[green]无失效事实。[/green]"
+    summary = summarize_recheck(results)
+    if summary.sources == 0:
+        return "[yellow]尚未记忆任何来源，无内容可校验。[/yellow]"
+    if summary.verified == 0:
+        return (
+            f"[yellow]所有来源都无法读取（共 {summary.sources} 个），"
+            "本轮未校验任何来源，失效状态未知。[/yellow]"
+        )
+    skipped = (
+        f"（{summary.unverifiable} 个来源无法读取）" if summary.unverifiable else ""
+    )
+    return f"[green]{summary.verified} 个来源已校验，无失效事实。{skipped}[/green]"
 
 
 @app.command()
@@ -161,9 +191,9 @@ def sources():
         for src in srcs:
             fresh, stales = store.count_facts(src.id)  # type: ignore[arg-type]
             table.add_row(
-                src.app_bundle,
-                src.doc_url_or_id,
-                src.doc_title or "—",
+                escape(src.app_bundle),
+                escape(src.doc_url_or_id),
+                escape(src.doc_title or "—"),
                 src.source_kind.value,
                 str(fresh),
                 str(stales),
@@ -181,13 +211,14 @@ def _source_checked(store: SuJiStore, source_id: int) -> str:
     return row["last_checked_at"] if row else ""
 
 
-def _print_recheck(results, store: SuJiStore) -> None:
+def _print_recheck(results: list[CascadeResult], store: SuJiStore) -> None:
     body_lines: list[str] = []
     for r in results:
         source = store.get_source(r.source_id)
         doc = source.doc_url_or_id if source else f"id={r.source_id}"
+        doc = escape(doc)
         if r.error:
-            body_lines.append(f"[dim]· 跳过 {doc}（{r.error}）[/dim]")
+            body_lines.append(f"[dim]· 跳过 {doc}（{escape(r.error)}）[/dim]")
         elif r.mutated:
             body_lines.append(
                 f"[red]· {doc} 来源已变更 → {r.stale_count} 条事实标记失效[/red]"

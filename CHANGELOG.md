@@ -4,6 +4,38 @@ SuJi (溯记) — local ambient screen-memory with per-fact source provenance an
 cascade-invalidation when a source mutates. Versions follow the tagged releases;
 each entry lists what actually changed in the code.
 
+## 0.4.0 — 2026-11-27
+
+Fixes to the cascade's error paths and to what the read-back surfaces report.
+
+- **An unreadable source no longer poisons the fingerprint.** A capture taken while the
+  source could not be fetched (offline, unreadable) used to store the captured *window
+  text* as the source's content, even though a re-check reads the source's own
+  representation. The first successful re-check of an unchanged page then reported the
+  whole document as rewritten and marked every fact stale. The capture now keeps the
+  revision already recorded for that source; only a source with no revision at all falls
+  back to the window text.
+- **A blank read is "unverifiable", not a mutation.** A 0-byte file (an editor's
+  truncate-then-write save, with the watchdog firing inside that window) or an empty
+  response body used to be fingerprinted as content: the source's remembered revision was
+  overwritten with the empty string, every fact went stale and the old/new diff base was
+  lost. `cascade.read_source_content` now defines "could not read" (absent or blank) once
+  for both the capture path and the re-check.
+- **`suji stale` says what it verified.** With no sources, or with only sources that cannot
+  be read (cloud-doc ids, offline), it printed the green "无失效事实。" line at exit 0 —
+  a pass manufactured from zero comparisons. It now reports the verified count, states
+  when no source could be read, and `summarize_recheck` (also used by the menu bar's
+  校验失效 notification) owns that classification.
+- **Captured text survives rendering.** Fact text, source ids and diffs are escaped before
+  rich renders them, so a fact containing a bracketed style-like token (e.g. `[red]`) is no
+  longer swallowed by the table.
+- **The file watcher hands back the stored source key.** watchdog reports resolved paths
+  (macOS `/tmp` is `/private/tmp`, symlinked folders report their target), while the
+  menu-bar callback matched the stored key verbatim, so an edit behind a symlink was
+  dropped silently and the fact stayed fresh.
+- The re-fetch User-Agent is derived from `suji.__version__` (it had been frozen at
+  `SuJi/0.1`) and is now part of the version lockstep test.
+
 ## 0.3.0 — 2026-10-22
 
 Fixes to the capture → provenance → cascade path, plus a mechanical version guard.

@@ -11,7 +11,7 @@
   "meta": {
     "visual_profile": "neon-particle",
     "demo_source": "docs/demo-results.json",
-    "implementation_version": "0.3.0"
+    "implementation_version": "0.4.0"
   },
   "hero": {
     "eyebrow": {
@@ -175,8 +175,8 @@
       "en": "Run the supplied example"
     },
     "note": {
-      "zh": "v0.3.0 的真实文件捕获接口、规则抽取、SQLite 与重新校验。没有读取屏幕、访问 URL 或调用模型；临时目录自动清理。",
-      "en": "Real v0.3.0 file-capture interface, rule extraction, SQLite and rechecking. No screen is read, URL fetched or model called; temporary files are cleaned up."
+      "zh": "v0.4.0 的真实文件捕获接口、规则抽取、SQLite 与重新校验。没有读取屏幕、访问 URL 或调用模型；临时目录自动清理。",
+      "en": "Real v0.4.0 file-capture interface, rule extraction, SQLite and rechecking. No screen is read, URL fetched or model called; temporary files are cleaned up."
     },
     "source": "https://github.com/SuperMarioYL/suji/blob/main/docs/demo-results.json",
     "steps": [

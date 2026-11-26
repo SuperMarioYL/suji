@@ -221,3 +221,57 @@ def test_ingest_capture_records_both_fingerprints(tmp_path):
         assert store.source_capture_fingerprint(src.id) == fingerprint(_ARTICLE_V1)  # type: ignore[arg-type]
     finally:
         store.close()
+
+
+# --------------------------------------------------------------------------- #
+# The watcher must hand back the caller's key, not watchdog's resolved path
+# --------------------------------------------------------------------------- #
+def test_file_watcher_reports_the_stored_key_for_a_symlinked_path(tmp_path):
+    """An edit behind a symlinked directory must cascade, not vanish.
+
+    watchdog reports resolved paths (on macOS /tmp is /private/tmp and any
+    symlinked folder is reported as its target), while the caller looks its
+    sources up by the stored key verbatim; without the translation the exact
+    match never fires and the fact stays fresh forever.
+    """
+    pytest.importorskip("watchdog")
+
+    real = tmp_path / "real"
+    real.mkdir()
+    target = real / "report.txt"
+    target.write_text(_ARTICLE_V1, encoding="utf-8")
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    key = str(link / "report.txt")
+
+    store = SuJiStore(str(tmp_path / "suji.db"))
+    try:
+        source_id = store.upsert_source(
+            make_source_ref("com.kingsoft.writer", key, "report"), _ARTICLE_V1
+        )
+        store.add_fact(source_id, "Q3 营收 4.2 亿", fingerprint(_ARTICLE_V1))
+
+        seen: list[str] = []
+
+        def on_change(changed: str) -> None:
+            seen.append(changed)
+            for src in store.list_sources():
+                if src.doc_url_or_id == changed:  # menu_bar.py's exact lookup
+                    Cascade(store).recheck_source(src.id)  # type: ignore[arg-type]
+
+        observer = start_file_watcher([key], on_change)
+        try:
+            deadline = time.monotonic() + 15.0
+            while time.monotonic() < deadline:
+                if store.list_facts(source_id=source_id)[0].status == "stale":
+                    break
+                target.write_text(_ARTICLE_V2, encoding="utf-8")
+                time.sleep(0.25)
+        finally:
+            observer.stop()  # type: ignore[attr-defined]
+            observer.join()  # type: ignore[attr-defined]
+
+        assert seen and seen[0] == key
+        assert store.list_facts(source_id=source_id)[0].status == "stale"
+    finally:
+        store.close()

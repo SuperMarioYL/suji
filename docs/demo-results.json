@@ -1,5 +1,5 @@
 {
-  "version": "0.3.0",
+  "version": "0.4.0",
   "fixture": "Constructed local text file, rule extractor, real SQLite store and file recheck. No screen capture, URL fetch or model request.",
   "steps": [
     {

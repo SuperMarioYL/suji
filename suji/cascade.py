@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from typing import Callable, Optional, Protocol, runtime_checkable
 
+from . import __version__
 from .provenance import (
     CascadeResult,
     SourceKind,
@@ -27,7 +29,10 @@ from .provenance import (
 from .store import SuJiStore
 
 _FETCH_TIMEOUT = 12.0  # seconds — URL re-fetch must not hang the loop
-_UA = "Mozilla/5.0 (compatible; SuJi/0.1; +https://github.com/SuperMarioYL/suji)"
+_UA = (
+    f"Mozilla/5.0 (compatible; SuJi/{__version__}; "
+    "+https://github.com/SuperMarioYL/suji)"
+)
 
 
 @runtime_checkable
@@ -99,6 +104,49 @@ def make_fetcher(source: SourceRef) -> SourceFetcher:
     return DocIdFetcher()
 
 
+def read_source_content(fetcher: SourceFetcher, source: SourceRef) -> Optional[str]:
+    """The source's current content, or None when it cannot be read.
+
+    A blank result is not content: an editor's truncate-then-write save leaves
+    a 0-byte file for a moment (the watchdog fires inside that window) and an
+    empty response body carries nothing to compare. Fingerprinting it would
+    stamp the source empty — destroying the revision the diff is built from —
+    and cascade every fact stale, so both readers (capture and re-check) treat
+    it exactly like an unreadable source.
+    """
+    content = fetcher.fetch(source)
+    if content is None or not content.strip():
+        return None
+    return content
+
+
+@dataclass(frozen=True)
+class RecheckSummary:
+    """What a re-check actually verified.
+
+    ``verified`` counts the sources whose content was read this run. A run
+    with ``verified == 0`` compared nothing, so "no stale facts" from it is an
+    absence of evidence, not a passing check.
+    """
+
+    sources: int
+    verified: int
+    mutated: int
+
+    @property
+    def unverifiable(self) -> int:
+        return self.sources - self.verified
+
+
+def summarize_recheck(results: list[CascadeResult]) -> RecheckSummary:
+    """Classify a re-check run, so every reporter agrees on what it verified."""
+    return RecheckSummary(
+        sources=len(results),
+        verified=sum(1 for r in results if not r.error),
+        mutated=sum(1 for r in results if r.mutated),
+    )
+
+
 class Cascade:
     """Re-verify source fingerprints and cascade-stale derived facts.
 
@@ -121,11 +169,11 @@ class Cascade:
         if source is None:
             return CascadeResult(source_id=source_id, error="source not found")
         fetcher = self._fetcher_for(source)
-        content = fetcher.fetch(source)
+        content = read_source_content(fetcher, source)
         if content is None:
-            # Could not re-fetch (offline / cloud doc / file gone) — do not
-            # mark anything stale; the prior facts stay fresh pending the
-            # next successful re-check.
+            # Could not re-fetch (offline / cloud doc / file gone / blank read)
+            # — do not mark anything stale; the prior facts stay fresh pending
+            # the next successful re-check.
             return CascadeResult(
                 source_id=source_id,
                 error="unverifiable",
@@ -182,6 +230,11 @@ def start_file_watcher(
 ) -> "object":
     """Watch local file sources with watchdog; fire ``on_change(path)`` on edit.
 
+    ``path`` is the key the caller passed in, not the path watchdog reports:
+    watchdog resolves symlinks (macOS ``/tmp`` is ``/private/tmp``), so a caller
+    that looks a source up by its stored key verbatim would otherwise never
+    match and the edit would be dropped silently.
+
     Returns the started Observer (call ``.stop()`` / ``.join()`` to end).
     ``watchdog`` is a core dep and installs cross-platform; the watcher only
     fires for paths that exist at start time.
@@ -191,32 +244,32 @@ def start_file_watcher(
 
     import os
 
-    callback = on_change
+    by_realpath = {os.path.realpath(p): p for p in paths}
 
     class _Handler(FileSystemEventHandler):
-        def on_modified(self, event):  # type: ignore[override]
+        def _emit(self, event) -> None:
             if event.is_directory:
                 return
-            callback(event.src_path)
+            key = by_realpath.get(os.path.realpath(event.src_path))
+            if key is not None:
+                on_change(key)
+
+        def on_modified(self, event):  # type: ignore[override]
+            self._emit(event)
 
         def on_created(self, event):  # type: ignore[override]
-            if event.is_directory:
-                return
-            callback(event.src_path)
+            self._emit(event)
 
     observer = Observer()
     seen: set[str] = set()
     for path in paths:
-        watch = os.path.dirname(path) or "."
-        target = os.path.basename(path)
+        watch = os.path.dirname(os.path.realpath(path)) or "."
         if watch in seen:
             continue
         seen.add(watch)
         observer.schedule(_Handler(), watch, recursive=False)
     observer.start()
 
-    # The handler filters by event path; the caller resolves path→source_id
-    # via the store and calls cascade.recheck_source. We expose target set
-    # for the caller's filter.
-    observer._suji_targets = set(paths)  # type: ignore[attr-defined]
+    # The caller resolves path→source_id via the store and calls
+    # cascade.recheck_source; _Handler already delivers the caller's own key.
     return observer
